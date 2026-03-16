@@ -93,31 +93,67 @@ export interface PortraitPaths {
   original?: string;
 }
 
+// Cached manifest: theme-slug -> { role -> filename-stem }
+let _manifest: Record<string, Record<string, string>> | null = null;
+
+function loadManifest(): Record<string, Record<string, string>> {
+  if (_manifest) return _manifest;
+  const manifestPath = join(getPortraitCacheDir(), "manifest.json");
+  if (!existsSync(manifestPath)) {
+    _manifest = {};
+    return _manifest;
+  }
+  try {
+    _manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    return _manifest!;
+  } catch {
+    _manifest = {};
+    return _manifest;
+  }
+}
+
 /**
- * Resolve portrait paths for an agent. Portraits are stored globally at
- * $XDG_DATA_HOME/aclaude/portraits/{theme-slug}/{size}/{character}.png
+ * Resolve portrait paths for an agent. Resolution order:
+ *   1. manifest.json (authoritative: theme/role -> filename stem)
+ *   2. Prefix match on shortName against files on disk (fallback)
  *
- * The character filename is derived from shortName (lowercase, hyphenated)
- * or falls back to a fuzzy match against available files.
+ * Portraits are stored globally at:
+ *   $XDG_DATA_HOME/aclaude/portraits/{theme-slug}/{size}/{stem}.png
  */
-export function resolvePortrait(themeSlug: string, agent: PersonaAgent): PortraitPaths {
+export function resolvePortrait(themeSlug: string, agent: PersonaAgent, role?: string): PortraitPaths {
   const cacheDir = getPortraitCacheDir();
   const themeDir = join(cacheDir, themeSlug);
   if (!existsSync(themeDir)) return {};
 
-  // Build candidate filenames from shortName or character
-  const name = (agent.shortName || agent.character || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  // Try manifest first
+  const manifest = loadManifest();
+  let stem: string | undefined;
+  if (role && manifest[themeSlug]?.[role]) {
+    stem = manifest[themeSlug][role];
+  }
+
+  // Fallback: derive from shortName/character
+  if (!stem) {
+    stem = (agent.shortName || agent.character || "").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  }
 
   const paths: PortraitPaths = {};
   for (const size of ["small", "medium", "large", "original"] as const) {
     const sizeDir = join(themeDir, size);
     if (!existsSync(sizeDir)) continue;
 
-    // Try exact match first, then prefix match
+    // Exact stem match (manifest provides full stem like "marvin-55115")
+    const exactFile = join(sizeDir, `${stem}.png`);
+    if (existsSync(exactFile)) {
+      paths[size] = exactFile;
+      continue;
+    }
+
+    // Prefix match (fallback for shortName-derived stems)
     const files = readdirSync(sizeDir).filter((f) => f.endsWith(".png"));
-    const exact = files.find((f) => f.startsWith(name));
-    if (exact) {
-      paths[size] = join(sizeDir, exact);
+    const prefixMatch = files.find((f) => f.startsWith(stem!));
+    if (prefixMatch) {
+      paths[size] = join(sizeDir, prefixMatch);
     }
   }
 

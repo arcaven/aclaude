@@ -115,13 +115,19 @@ personaCmd
     }
     console.log(`\nAgents (${Object.keys(theme.agents).length}):`);
     for (const [role, agent] of Object.entries(theme.agents)) {
-      const portrait = resolvePortrait(name, agent);
-      const portraitStatus = Object.keys(portrait).length > 0
-        ? `[${Object.keys(portrait).join(",")}]`
+      const portrait = resolvePortrait(name, agent, role);
+      const sizes = Object.keys(portrait);
+      const portraitStatus = sizes.length > 0
+        ? `[${sizes.join(",")}]`
         : "[no portraits]";
       console.log(`  ${role.padEnd(15)} ${agent.character}`);
       console.log(`  ${"".padEnd(15)} ${agent.style}`);
       console.log(`  ${"".padEnd(15)} portraits: ${portraitStatus}`);
+      if (portrait.small) {
+        // Show the stem (filename without path/extension) as the canonical reference
+        const stem = portrait.small.split("/").pop()?.replace(/\.png$/, "") || "";
+        console.log(`  ${"".padEnd(15)} file: ${stem}.png`);
+      }
     }
   });
 
