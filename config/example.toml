@@ -1,0 +1,31 @@
+# aclaude configuration
+# Copy to ~/.config/aclaude/config.toml (global) or .aclaude/config.toml (local)
+#
+# Resolution order (last wins):
+#   1. Built-in defaults (config/defaults.toml)
+#   2. Global: $XDG_CONFIG_HOME/aclaude/config.toml
+#   3. Local: .aclaude/config.toml
+#   4. Environment: ACLAUDE_* prefix
+#   5. CLI flags
+
+[session]
+# model = "claude-sonnet-4-6"
+# max_tokens = 16384
+
+[persona]
+# theme = "hitchhikers-guide"
+# role = "dev"                    # which character from theme roster
+# immersion = "high"              # high | medium | low | none
+
+[statusline]
+# enabled = true
+# git_info = true
+# context_bar = true
+
+[telemetry]
+# enabled = false
+# otel_endpoint = ""
+
+[tmux]
+# layout = "bottom"               # bottom | top | left | right
+# socket = "ac"

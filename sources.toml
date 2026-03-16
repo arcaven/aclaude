@@ -1,0 +1,172 @@
+# aclaude sources — declares where importable objects come from.
+#
+# `aclaude sync` reads this file and pulls objects from each source.
+# Images are siphoned to the global portrait cache, not into this repo.
+#
+# Resolution: later sources override earlier ones for same-named objects.
+
+# ---------------------------------------------------------------------------
+# Global settings
+# ---------------------------------------------------------------------------
+
+[portraits]
+# Portraits are stored globally, not in the repo.
+# The sync command copies images here; the CLI resolves them at runtime.
+cache_dir = "$XDG_DATA_HOME/aclaude/portraits"  # default: ~/.local/share/aclaude/portraits
+sizes = ["small", "medium"]                       # which sizes to keep (skip large/original to save space)
+
+# ---------------------------------------------------------------------------
+# Pennyfarthing dist (base 45 themes — already imported)
+# ---------------------------------------------------------------------------
+
+[[source]]
+name = "pennyfarthing-dist"
+type = "themes"
+from = "path:../penny-orc/pennyfarthing/pennyfarthing-dist/personas/themes"
+glob = "*.yaml"
+dest = "personas/themes/"
+
+[[source]]
+name = "pennyfarthing-dist-portraits"
+type = "portraits"
+from = "path:../penny-orc/pennyfarthing/pennyfarthing-dist/personas/portraits"
+glob = "{theme-slug}/{size}/*.png"
+dest = "$portraits.cache_dir"
+
+# ---------------------------------------------------------------------------
+# Pennyfarthing theme packs (npm)
+# ---------------------------------------------------------------------------
+
+[[source]]
+name = "themes-comedy"
+type = "themes"
+from = "npm:@pennyfarthing/themes-comedy"
+glob = "themes/*.yaml"
+dest = "personas/themes/"
+
+[[source]]
+name = "themes-comedy-portraits"
+type = "portraits"
+from = "npm:@pennyfarthing/themes-comedy"
+glob = "portraits/{theme-slug}/{size}/*.png"
+dest = "$portraits.cache_dir"
+
+[[source]]
+name = "themes-literary"
+type = "themes"
+from = "npm:@pennyfarthing/themes-literary"
+glob = "themes/*.yaml"
+dest = "personas/themes/"
+
+[[source]]
+name = "themes-literary-portraits"
+type = "portraits"
+from = "npm:@pennyfarthing/themes-literary"
+glob = "portraits/{theme-slug}/{size}/*.png"
+dest = "$portraits.cache_dir"
+
+[[source]]
+name = "themes-mythology-fantasy"
+type = "themes"
+from = "npm:@pennyfarthing/themes-mythology-fantasy"
+glob = "themes/*.yaml"
+dest = "personas/themes/"
+
+[[source]]
+name = "themes-mythology-fantasy-portraits"
+type = "portraits"
+from = "npm:@pennyfarthing/themes-mythology-fantasy"
+glob = "portraits/{theme-slug}/{size}/*.png"
+dest = "$portraits.cache_dir"
+
+[[source]]
+name = "themes-prestige-tv"
+type = "themes"
+from = "npm:@pennyfarthing/themes-prestige-tv"
+glob = "themes/*.yaml"
+dest = "personas/themes/"
+
+[[source]]
+name = "themes-prestige-tv-portraits"
+type = "portraits"
+from = "npm:@pennyfarthing/themes-prestige-tv"
+glob = "portraits/{theme-slug}/{size}/*.png"
+dest = "$portraits.cache_dir"
+
+[[source]]
+name = "themes-realistic"
+type = "themes"
+from = "npm:@pennyfarthing/themes-realistic"
+glob = "themes/*.yaml"
+dest = "personas/themes/"
+
+[[source]]
+name = "themes-realistic-portraits"
+type = "portraits"
+from = "npm:@pennyfarthing/themes-realistic"
+glob = "portraits/{theme-slug}/{size}/*.png"
+dest = "$portraits.cache_dir"
+
+[[source]]
+name = "themes-scifi"
+type = "themes"
+from = "npm:@pennyfarthing/themes-scifi"
+glob = "themes/*.yaml"
+dest = "personas/themes/"
+
+[[source]]
+name = "themes-scifi-portraits"
+type = "portraits"
+from = "npm:@pennyfarthing/themes-scifi"
+glob = "portraits/{theme-slug}/{size}/*.png"
+dest = "$portraits.cache_dir"
+
+[[source]]
+name = "themes-superheroes"
+type = "themes"
+from = "npm:@pennyfarthing/themes-superheroes"
+glob = "themes/*.yaml"
+dest = "personas/themes/"
+
+[[source]]
+name = "themes-superheroes-portraits"
+type = "portraits"
+from = "npm:@pennyfarthing/themes-superheroes"
+glob = "portraits/{theme-slug}/{size}/*.png"
+dest = "$portraits.cache_dir"
+
+# ---------------------------------------------------------------------------
+# Pennyfarthing local overrides (installed per-project)
+# ---------------------------------------------------------------------------
+
+[[source]]
+name = "pennyfarthing-local"
+type = "themes"
+from = "path:../penny-orc/.pennyfarthing/personas/themes"
+glob = "*.yaml"
+dest = "personas/themes/"
+
+# ---------------------------------------------------------------------------
+# Future: bmad workflows, gates, agent definitions
+# ---------------------------------------------------------------------------
+
+# [[source]]
+# name = "bmad-workflows"
+# type = "workflows"
+# from = "git:github.com/1898andCo/bmad#main"
+# glob = "workflows/*.yaml"
+# dest = "workflows/"
+
+# [[source]]
+# name = "multiclaude-agents"
+# type = "agents"
+# from = "git:github.com/arcaven/multiclaude#main"
+# glob = "agents/*.yaml"
+# dest = "agents/"
+
+# [[source]]
+# name = "gastown-gates"
+# type = "gates"
+# from = "git:github.com/arcaven/gastown#main"
+# glob = "gates/*.yaml"
+# dest = "gates/"

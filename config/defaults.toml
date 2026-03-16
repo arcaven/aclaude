@@ -1,0 +1,21 @@
+[session]
+model = "claude-sonnet-4-6"
+max_tokens = 16384
+
+[persona]
+theme = "hitchhikers-guide"
+role = "dev"
+immersion = "high"  # high | medium | low | none
+
+[statusline]
+enabled = true
+git_info = true
+context_bar = true
+
+[telemetry]
+enabled = false
+otel_endpoint = ""
+
+[tmux]
+layout = "bottom"
+socket = "ac"
