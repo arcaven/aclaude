@@ -94,7 +94,7 @@ personaCmd
   .description("Show theme details")
   .option("-p, --portrait", "display portraits inline (Kitty/Ghostty)")
   .option("--portrait-position <pos>", "portrait position: top|bottom", "top")
-  .option("--portrait-align <align>", "portrait alignment: left|right", "left")
+  .option("--portrait-align <align>", "portrait alignment: left|center|right", "left")
   .option("--portrait-size <size>", "portrait size: small|medium|large|original", "original")
   .option("--agent <role>", "show only this agent/role (with portrait if -p)")
   .action((name: string, opts: { portrait?: boolean; portraitPosition?: string; portraitAlign?: string; portraitSize?: string; agent?: string }) => {
@@ -116,7 +116,7 @@ personaCmd
       const sizeKey = (opts.portraitSize || "original") as keyof typeof portrait;
       const imgPath = portrait[sizeKey] || portrait.original || portrait.large || portrait.medium || portrait.small || null;
       const position = (opts.portraitPosition || "top") as "top" | "bottom";
-      const align = (opts.portraitAlign || "left") as "left" | "right";
+      const align = (opts.portraitAlign || "left") as "left" | "center" | "right";
       const showImage = opts.portrait && imgPath;
 
       // Portrait before card

@@ -194,7 +194,7 @@ export function terminalSupportsImages(): boolean {
 }
 
 export type PortraitPosition = "top" | "bottom";
-export type PortraitAlign = "left" | "right";
+export type PortraitAlign = "left" | "center" | "right";
 
 /**
  * Display a portrait in the terminal using `kitten icat`.
