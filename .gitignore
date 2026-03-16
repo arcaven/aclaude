@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+cli/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Environment
+.env
+.env.local
+
+# Runtime
+*.log
+.aclaude/tmux-status-*
+
+# Coverage
+coverage/
