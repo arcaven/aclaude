@@ -182,23 +182,23 @@ export function terminalSupportsImages(): boolean {
  * Display a portrait in the terminal using `kitten icat`.
  * Returns true if displayed, false if not possible.
  */
-export function displayPortrait(portraitPath: string, opts?: { width?: number }): boolean {
+export function displayPortrait(portraitPath: string, opts?: { columns?: number }): boolean {
   if (!terminalSupportsImages()) return false;
   if (!existsSync(portraitPath)) return false;
 
-  const width = opts?.width ?? 20;
+  const cols = opts?.columns ?? 40;
 
   try {
-    // kitten icat works in both Kitty and Ghostty
-    execSync(`kitten icat --place ${width}x${width}@0x0 --align left "${portraitPath}"`, {
+    // kitten icat in inline/stream mode — prints image at cursor, flows with text
+    execSync(`kitten icat --align left --scale-up --unicode-placeholder --transfer-mode=stream "${portraitPath}"`, {
       stdio: "inherit",
       timeout: 5000,
     });
     return true;
   } catch {
-    // Fall back to simpler invocation without --place
     try {
-      execSync(`kitten icat --transfer-mode=stream "${portraitPath}"`, {
+      // Minimal fallback
+      execSync(`kitten icat "${portraitPath}"`, {
         stdio: "inherit",
         timeout: 5000,
       });
