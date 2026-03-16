@@ -94,8 +94,9 @@ personaCmd
   .description("Show theme details")
   .option("-p, --portrait", "display portraits inline (Kitty/Ghostty)")
   .option("--portrait-position <pos>", "portrait position: top|bottom|left|right", "top")
+  .option("--portrait-size <size>", "portrait size: small|medium|large|original", "large")
   .option("--agent <role>", "show only this agent/role (with portrait if -p)")
-  .action((name: string, opts: { portrait?: boolean; portraitPosition?: string; agent?: string }) => {
+  .action((name: string, opts: { portrait?: boolean; portraitPosition?: string; portraitSize?: string; agent?: string }) => {
     const theme = loadTheme(name);
     if (!theme) {
       console.error(`Theme "${name}" not found.`);
@@ -111,7 +112,8 @@ personaCmd
         process.exit(1);
       }
       const portrait = resolvePortrait(name, agent, opts.agent);
-      const imgPath = portrait.large || portrait.medium || portrait.small || null;
+      const size = (opts.portraitSize || "large") as keyof typeof portrait;
+      const imgPath = portrait[size] || portrait.large || portrait.medium || portrait.small || null;
       const position = (opts.portraitPosition || "top") as "top" | "bottom" | "left" | "right";
       const showImage = opts.portrait && imgPath;
 
