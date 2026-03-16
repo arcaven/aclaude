@@ -93,8 +93,9 @@ personaCmd
   .command("show <name>")
   .description("Show theme details")
   .option("-p, --portrait", "display portraits inline (Kitty/Ghostty)")
+  .option("--portrait-position <pos>", "portrait position: top|bottom|left|right", "top")
   .option("--agent <role>", "show only this agent/role (with portrait if -p)")
-  .action((name: string, opts: { portrait?: boolean; agent?: string }) => {
+  .action((name: string, opts: { portrait?: boolean; portraitPosition?: string; agent?: string }) => {
     const theme = loadTheme(name);
     if (!theme) {
       console.error(`Theme "${name}" not found.`);
@@ -109,6 +110,19 @@ personaCmd
         console.error(`Available: ${Object.keys(theme.agents).join(", ")}`);
         process.exit(1);
       }
+      const portrait = resolvePortrait(name, agent, opts.agent);
+      const imgPath = portrait.large || portrait.medium || portrait.small || null;
+      const position = (opts.portraitPosition || "top") as "top" | "bottom" | "left" | "right";
+      const showImage = opts.portrait && imgPath;
+
+      // Portrait before card (top or left)
+      if (showImage && (position === "top" || position === "left")) {
+        if (!displayPortrait(imgPath!, { position })) {
+          console.log("(terminal does not support inline images — try Kitty or Ghostty)");
+        }
+        console.log("");
+      }
+
       console.log(`Theme: ${theme.name}`);
       console.log(`Role:  ${opts.agent}`);
       console.log(`Character: ${agent.character}`);
@@ -120,20 +134,19 @@ personaCmd
         console.log(`Catchphrases:`);
         for (const c of agent.catchphrases) console.log(`  "${c}"`);
       }
-
-      const portrait = resolvePortrait(name, agent, opts.agent);
-      if (portrait.large || portrait.medium || portrait.small) {
-        const imgPath = portrait.large || portrait.medium || portrait.small!;
+      if (imgPath) {
         const stem = imgPath.split("/").pop()?.replace(/\.png$/, "") || "";
         console.log(`Portrait: ${stem}.png`);
-        if (opts.portrait) {
-          console.log("");
-          if (!displayPortrait(imgPath)) {
-            console.log("(terminal does not support inline images — try Kitty or Ghostty)");
-          }
-        }
       } else {
         console.log("Portrait: not installed");
+      }
+
+      // Portrait after card (bottom or right)
+      if (showImage && (position === "bottom" || position === "right")) {
+        console.log("");
+        if (!displayPortrait(imgPath!, { position })) {
+          console.log("(terminal does not support inline images — try Kitty or Ghostty)");
+        }
       }
       return;
     }

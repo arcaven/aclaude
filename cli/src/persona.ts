@@ -178,17 +178,25 @@ export function terminalSupportsImages(): boolean {
   return term === "ghostty" || term === "kitty" || termEnv.includes("kitty");
 }
 
+export type PortraitPosition = "top" | "bottom" | "left" | "right";
+
 /**
  * Display a portrait in the terminal using `kitten icat`.
  * Returns true if displayed, false if not possible.
+ *
+ * Position controls alignment:
+ *   top/bottom — inline block, left/center/right aligned
+ *   left/right — uses kitten icat --align
  */
-export function displayPortrait(portraitPath: string, opts?: { columns?: number }): boolean {
+export function displayPortrait(portraitPath: string, opts?: { position?: PortraitPosition }): boolean {
   if (!terminalSupportsImages()) return false;
   if (!existsSync(portraitPath)) return false;
 
+  const position = opts?.position ?? "top";
+  const align = position === "right" ? "right" : "left";
+
   try {
-    // kitten icat in inline mode — constrain to terminal columns, no scaling up
-    execSync(`kitten icat --align left --transfer-mode=stream "${portraitPath}"`, {
+    execSync(`kitten icat --align ${align} --transfer-mode=stream "${portraitPath}"`, {
       stdio: "inherit",
       timeout: 5000,
     });

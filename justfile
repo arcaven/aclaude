@@ -36,8 +36,8 @@ persona-show name:
   cd cli && npx tsx src/index.ts persona show {{name}}
 
 # Show a persona role with portrait (Kitty/Ghostty)
-persona-portrait theme agent="dev":
-  cd cli && npx tsx src/index.ts persona show {{theme}} --agent {{agent}} --portrait
+persona-portrait theme agent="dev" position="top":
+  cd cli && npx tsx src/index.ts persona show {{theme}} --agent {{agent}} --portrait --portrait-position {{position}}
 
 # Show resolved config
 config:
