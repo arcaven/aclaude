@@ -6,6 +6,11 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'CREDITS.md'
   pull_request:
     branches: [main]
 
