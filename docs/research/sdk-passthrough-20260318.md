@@ -149,6 +149,24 @@ and could differentiate aclaude — our TUI could include context bars,
 persona info, portrait display, and other things Claude Code doesn't show.
 This is a future probe, not a distribution-blocking gap.
 
+### No markdown rendering
+
+Claude Code renders markdown inline — headers, code blocks with syntax
+highlighting, lists, bold/italic, tables. The SDK streams raw text deltas
+from the Anthropic API. Claude Code's TUI handles rendering client-side.
+aclaude writes raw markdown to stdout via `process.stdout.write()`.
+
+This is part of the TUI gap (F14). Options for rendering:
+- **marked-terminal** — Node.js markdown-to-ANSI renderer
+- **cli-markdown** — lightweight alternative
+- **glow** — shell out to the Go binary if installed, fall back to raw
+- **Custom ANSI renderer** — if building a TUI anyway, render inline
+
+Markdown rendering is visible and frequent — every response contains
+markdown. This is likely the second most noticeable UX gap after the
+input box (F14), and arguably more impactful since it affects every
+response, not just input.
+
 ### Session works end-to-end
 
 With the fixes applied (settingSources, preset system prompt, executable
