@@ -1,8 +1,8 @@
 # aclaude
 
-An opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) distribution. Wraps the Claude Code CLI with persona theming, configurable defaults, and tmux session management.
+An opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) distribution. Wraps the Claude Code CLI with persona theming, configurable defaults, tmux session management and some additional features yet to be described here.
 
-aclaude is the A in BYOA — an experiment in determining what features are useful to expose in Claude Code-like programs, and an expression of preferences layered on top of the Claude Code foundation.
+aclaude is an exploration of features useful in Claude Code-like programs when used with systems like [marvel](https://github.com/arcaven/marvel) [switchboard](https://github.com/arcaven/switchboard) [specticle](https://github.com/arcaven/specticle) and an also an expression of preferences layered on top of the Claude Code foundation.
 
 ## Install
 
