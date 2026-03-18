@@ -34,32 +34,27 @@ aclaude uses the `@anthropic-ai/sdk` npm package for direct API access
 aclaude delegates authentication entirely to Claude Code and the Agent SDK.
 aclaude does not handle, store, or proxy any authentication tokens.
 
-**For distributed/shared use (the default):**
+**Single-user (your own account, your own machine):**
 
-- **Anthropic API key** (`ANTHROPIC_API_KEY`) — the required auth method
-  when aclaude is used as a distributed tool or product. Obtain from
+- **Claude Code OAuth** (Pro/Max subscription) — a single user running
+  aclaude with their own subscription is using Claude Code normally.
+  Max is designed for professional work including coding and engineering.
+  aclaude inherits Claude Code's auth as any wrapper would.
+- **Anthropic API key** (`ANTHROPIC_API_KEY`) — also works. Obtain from
   [console.anthropic.com](https://console.anthropic.com/).
-- **AWS Bedrock** or **Google Cloud Vertex AI** — supported cloud providers
-  with their own credential management.
+- **AWS Bedrock** or **Google Cloud Vertex AI** — supported cloud providers.
 
-**For personal use on your own machine:**
+**Multi-user distribution (others authenticate through your tool):**
 
-- **Claude Code OAuth** (Pro/Max subscription) — when you are the sole user
-  running aclaude on your own machine with your own subscription, OAuth
-  auth inherited from Claude Code works as it would for any Claude Code
-  session. This is personal use of Claude Code, not distribution.
+- **API key auth required** — if you distribute aclaude as a product or
+  service where multiple users authenticate through it, API key
+  authentication is required per Anthropic's Commercial Terms of Service.
+- Do not route other people's Claude.ai credentials through your tool.
 
-**What is not permitted:**
-
-- Using OAuth tokens from Claude Free/Pro/Max consumer accounts in aclaude
-  when distributing it as a product or service to others
-- Advertising "bring your Max subscription" as a feature of aclaude
-- Proxying, extracting, or relaying consumer OAuth tokens through aclaude
-
-This distinction follows Anthropic's written policy: the Agent SDK's
-Commercial Terms of Service require API key authentication when building
-products and services. OAuth/consumer plan auth is reserved for direct
-Claude Code and Claude.ai use.
+The boundary is single-user vs. multi-user routing, not personal vs.
+professional. One person using their Max subscription through aclaude for
+work is fine. Building a multi-user product that routes subscribers'
+OAuth tokens through it is not.
 
 ## Usage Policy
 
