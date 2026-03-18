@@ -11,7 +11,9 @@ Requires: [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`cl
 ```sh
 # curl (alpha — updates on every push to main)
 curl -fsSL https://raw.githubusercontent.com/arcaven/aclaude/main/install.sh | sh -s -- --alpha
+```
 
+```sh
 # Homebrew (alpha)
 brew install arcaven/tap/aclaude-a
 ```
