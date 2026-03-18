@@ -35,9 +35,8 @@ jobs:
           - os: darwin
             arch: arm64
             runner: macos-latest
-          - os: darwin
-            arch: amd64
-            runner: macos-13
+          # darwin-amd64 skipped: macOS Intel runners deprecated,
+          # arm64 binaries run on Intel via Rosetta 2
           - os: linux
             arch: amd64
             runner: ubuntu-latest
@@ -87,7 +86,7 @@ jobs:
     environment: release
     strategy:
       matrix:
-        arch: [arm64, amd64]
+        arch: [arm64]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -216,12 +215,6 @@ jobs:
           name: ${{ needs.sign-and-notarize.result == 'success' && 'signed-binaries-darwin-arm64' || 'binaries-darwin-arm64' }}
           path: dist/
 
-      - name: Download macOS amd64
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.sign-and-notarize.result == 'success' && 'signed-binaries-darwin-amd64' || 'binaries-darwin-amd64' }}
-          path: dist/
-
       - name: Download Linux amd64
         uses: actions/download-artifact@v4
         with:
@@ -273,7 +266,6 @@ jobs:
           TAG="${{ needs.build.outputs.tag }}"
 
           SHA256_ARM64=$(shasum -a 256 dist/aclaude-darwin-arm64 | cut -d' ' -f1)
-          SHA256_AMD64=$(shasum -a 256 dist/aclaude-darwin-amd64 | cut -d' ' -f1)
 
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/arcaven/homebrew-tap.git" homebrew-tap-repo
           cd homebrew-tap-repo

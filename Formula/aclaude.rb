@@ -2,20 +2,16 @@
 # Updated automatically by CI on tagged releases (v*)
 
 class Aclaude < Formula
-  desc "BYOA agent CLI with persona theming"
+  desc "Opinionated wrapper for Claude Code with persona theming"
   homepage "https://github.com/arcaven/aclaude"
   version "VERSION_PLACEHOLDER"
   license "MIT"
 
-  if Hardware::CPU.arm?
+  on_macos do
     url "https://github.com/arcaven/aclaude/releases/download/TAG_PLACEHOLDER/aclaude-darwin-arm64"
     sha256 "SHA256_ARM64_PLACEHOLDER"
-  else
-    url "https://github.com/arcaven/aclaude/releases/download/TAG_PLACEHOLDER/aclaude-darwin-amd64"
-    sha256 "SHA256_AMD64_PLACEHOLDER"
   end
 
-  # Linux support
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/arcaven/aclaude/releases/download/TAG_PLACEHOLDER/aclaude-linux-arm64"

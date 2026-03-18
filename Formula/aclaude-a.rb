@@ -2,17 +2,14 @@
 # Updated automatically by CI on every push to main
 
 class AclaudeA < Formula
-  desc "BYOA agent CLI with persona theming (alpha channel)"
+  desc "Opinionated wrapper for Claude Code with persona theming (alpha channel)"
   homepage "https://github.com/arcaven/aclaude"
   version "VERSION_PLACEHOLDER"
   license "MIT"
 
-  if Hardware::CPU.arm?
+  on_macos do
     url "https://github.com/arcaven/aclaude/releases/download/TAG_PLACEHOLDER/aclaude-a-darwin-arm64"
     sha256 "SHA256_ARM64_PLACEHOLDER"
-  else
-    url "https://github.com/arcaven/aclaude/releases/download/TAG_PLACEHOLDER/aclaude-a-darwin-amd64"
-    sha256 "SHA256_AMD64_PLACEHOLDER"
   end
 
   on_linux do
@@ -34,11 +31,9 @@ class AclaudeA < Formula
 
   def caveats
     <<~EOS
-      aclaude-a is the alpha channel of aclaude. Updates on every push to main.
-      For the stable channel, use: brew install arcaven/tap/aclaude
-
-      Requires Claude Code CLI (claude) to be installed.
-      See: https://docs.anthropic.com/en/docs/claude-code
+      aclaude-a is the alpha channel. Updates on every push to main.
+      For stable: brew install arcaven/tap/aclaude
+      Requires Claude Code CLI (claude).
     EOS
   end
 
