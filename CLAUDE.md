@@ -38,7 +38,7 @@ See `docs/research/cc-vs-sdk-20260316.md` for the full comparison.
 ## Conventions
 
 - **Config format:** TOML. Merge order: defaults → global (~/.config/aclaude/) → local (.aclaude/) → env (ACLAUDE_*) → CLI flags.
-- **Auth:** Delegates to Claude Code (user's existing login). No direct OAuth implementation.
+- **Auth:** Delegates to Claude Code via Agent SDK. Users authenticate with their own Anthropic API key, AWS Bedrock, or Google Cloud Vertex AI credentials. aclaude does not store, manage, or proxy authentication. See THIRD_PARTY_NOTICES.md for details.
 - **No file deletion:** Never delete user files. Overwrite only with explicit intent.
 - **Parallel-safe:** Each session gets a UUID. No shared mutable state between sessions.
 - **Dependencies:** Keep minimal. No frameworks beyond commander for CLI parsing.
