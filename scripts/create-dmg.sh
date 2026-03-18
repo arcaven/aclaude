@@ -20,9 +20,18 @@ cp -R "$APP_PATH" "$STAGING_DIR/"
 ln -s /Applications "$STAGING_DIR/Applications"
 
 rm -f "$OUTPUT_PATH"
+sync
+sleep 1
 hdiutil create -volname "Aclaude $VERSION" \
   -srcfolder "$STAGING_DIR" \
   -ov -format UDZO \
-  "$OUTPUT_PATH"
+  "$OUTPUT_PATH" || {
+  echo "Retrying after hdiutil failure..."
+  sleep 3
+  hdiutil create -volname "Aclaude $VERSION" \
+    -srcfolder "$STAGING_DIR" \
+    -ov -format UDZO \
+    "$OUTPUT_PATH"
+}
 
 echo "Created dmg: $OUTPUT_PATH"
