@@ -1,0 +1,46 @@
+# Release Verification
+# Triggers: after release workflow completes
+# Verifies that the homebrew-tap CI passed after formula push
+name: Release Verify
+
+on:
+  workflow_run:
+    workflows: ["Release", "CI"]
+    types: [completed]
+
+jobs:
+  verify-tap:
+    name: Verify Homebrew Tap
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tap CI status
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          echo "Checking homebrew-tap CI status..."
+
+          # Get the latest workflow run from the tap repo
+          RUNS=$(gh run list \
+            --repo arcaven/homebrew-tap \
+            --limit 1 \
+            --json status,conclusion,headBranch,createdAt \
+            2>/dev/null || echo "[]")
+
+          if [[ "$RUNS" == "[]" ]]; then
+            echo "No CI runs found in homebrew-tap (may not have CI configured)"
+            exit 0
+          fi
+
+          echo "Latest tap CI run:"
+          echo "$RUNS" | jq '.'
+
+          CONCLUSION=$(echo "$RUNS" | jq -r '.[0].conclusion // "pending"')
+
+          if [[ "$CONCLUSION" == "failure" ]]; then
+            echo "::warning::Homebrew tap CI failed. Check https://github.com/arcaven/homebrew-tap/actions"
+          elif [[ "$CONCLUSION" == "success" ]]; then
+            echo "Homebrew tap CI passed."
+          else
+            echo "Homebrew tap CI status: $CONCLUSION"
+          fi

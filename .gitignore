@@ -3,6 +3,10 @@ node_modules/
 
 # Build output
 cli/dist/
+cli/.*.bun-build
+cli/aclaude
+cli/aclaude-*
+cli/.aclaude/
 
 # OS
 .DS_Store

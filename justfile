@@ -48,3 +48,21 @@ persona-portrait theme agent="dev":
 # Show resolved config
 config:
   cd cli && npx tsx src/index.ts config
+
+# --- Distribution ---
+
+# Build standalone binary (bun compile)
+build-dist:
+  cd cli && bun build --compile src/index.ts --outfile aclaude
+
+# Build platform-specific binary with name
+build-dist-platform os arch:
+  cd cli && bun build --compile src/index.ts --outfile aclaude-{{os}}-{{arch}}
+
+# Build alpha binary
+build-dist-alpha:
+  cd cli && bun build --compile src/index.ts --outfile aclaude-a
+
+# Verify compiled binary
+verify-dist:
+  cd cli && ./aclaude --version && ./aclaude persona list | head -5

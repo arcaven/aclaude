@@ -1,0 +1,292 @@
+# CI + Alpha Release
+# Triggers: push to main
+# Builds binaries for all platforms, creates pre-release, updates homebrew-tap
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  BUN_VERSION: "1.3"
+
+jobs:
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: cd cli && bun install
+      - run: cd cli && bun run lint
+      - run: cd cli && bun run test
+
+  build:
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        include:
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+          - os: darwin
+            arch: amd64
+            runner: macos-13
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: cd cli && bun install
+
+      - name: Build stable binary
+        run: |
+          cd cli
+          bun build --compile src/index.ts --outfile aclaude-${{ matrix.os }}-${{ matrix.arch }}
+
+      - name: Build alpha binary
+        run: |
+          cd cli
+          cp aclaude-${{ matrix.os }}-${{ matrix.arch }} aclaude-a-${{ matrix.os }}-${{ matrix.arch }}
+
+      - name: Verify binary
+        run: |
+          cd cli
+          ./aclaude-${{ matrix.os }}-${{ matrix.arch }} --version
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            cli/aclaude-${{ matrix.os }}-${{ matrix.arch }}
+            cli/aclaude-a-${{ matrix.os }}-${{ matrix.arch }}
+
+  sign:
+    name: Sign & Notarize (macOS)
+    needs: build
+    if: vars.SIGNING_ENABLED == 'true'
+    strategy:
+      matrix:
+        arch: [arm64, amd64]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-darwin-${{ matrix.arch }}
+
+      - name: Import signing certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+
+          echo -n "$APPLE_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Sign binaries
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          for binary in aclaude-darwin-${{ matrix.arch }} aclaude-a-darwin-${{ matrix.arch }}; do
+            codesign --force --options runtime \
+              --sign "$APPLE_SIGNING_IDENTITY" \
+              --timestamp \
+              "$binary"
+          done
+
+      - name: Notarize binaries
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          for binary in aclaude-darwin-${{ matrix.arch }} aclaude-a-darwin-${{ matrix.arch }}; do
+            zip "${binary}.zip" "$binary"
+            xcrun notarytool submit "${binary}.zip" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --wait
+            xcrun stapler staple "$binary" || true
+          done
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-binaries-darwin-${{ matrix.arch }}
+          path: |
+            aclaude-darwin-${{ matrix.arch }}
+            aclaude-a-darwin-${{ matrix.arch }}
+
+  alpha-release:
+    name: Create Alpha Release
+    needs: [build, sign]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.sign.result == 'success' || needs.sign.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      # Download signed binaries if signing was enabled, otherwise unsigned
+      - name: Download macOS arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.sign.result == 'success' && 'signed-binaries-darwin-arm64' || 'binaries-darwin-arm64' }}
+          path: dist/
+
+      - name: Download macOS amd64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.sign.result == 'success' && 'signed-binaries-darwin-amd64' || 'binaries-darwin-amd64' }}
+          path: dist/
+
+      - name: Download Linux amd64
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-linux-amd64
+          path: dist/
+
+      - name: Download Linux arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-linux-arm64
+          path: dist/
+
+      - name: Generate tag
+        id: tag
+        run: |
+          TAG="alpha-$(date -u +%Y%m%d-%H%M%S)-$(echo ${{ github.sha }} | head -c 7)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --prerelease \
+            --title "Alpha: ${{ steps.tag.outputs.tag }}" \
+            --notes "Alpha build from main @ ${{ github.sha }}" \
+            dist/*
+
+      - name: Clean old alpha releases (keep 30)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo "${{ github.repository }}" \
+            --json tagName,isPrerelease \
+            --jq '[.[] | select(.isPrerelease)] | sort_by(.tagName) | reverse | .[30:] | .[].tagName' \
+          | while read -r tag; do
+              echo "Deleting old alpha release: $tag"
+              gh release delete "$tag" --repo "${{ github.repository }}" --yes --cleanup-tag
+            done
+
+  update-tap-alpha:
+    name: Update Homebrew Tap (Alpha)
+    needs: alpha-release
+    if: vars.ALPHA_TAP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "binaries-*"
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate formula
+        run: |
+          TAG="${{ needs.alpha-release.outputs.tag || steps.tag.outputs.tag }}"
+
+          sha256_darwin_arm64=$(sha256sum dist/aclaude-a-darwin-arm64 | cut -d' ' -f1)
+          sha256_darwin_amd64=$(sha256sum dist/aclaude-a-darwin-amd64 | cut -d' ' -f1)
+          sha256_linux_arm64=$(sha256sum dist/aclaude-a-linux-arm64 | cut -d' ' -f1)
+          sha256_linux_amd64=$(sha256sum dist/aclaude-a-linux-amd64 | cut -d' ' -f1)
+
+          cat > aclaude-a.rb << FORMULA
+          class AclaudeA < Formula
+            desc "BYOA agent CLI with persona theming (alpha channel)"
+            homepage "https://github.com/arcaven/aclaude"
+            version "${TAG}"
+            license "MIT"
+
+            if Hardware::CPU.arm?
+              url "https://github.com/arcaven/aclaude/releases/download/${TAG}/aclaude-a-darwin-arm64"
+              sha256 "${sha256_darwin_arm64}"
+            else
+              url "https://github.com/arcaven/aclaude/releases/download/${TAG}/aclaude-a-darwin-amd64"
+              sha256 "${sha256_darwin_amd64}"
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/arcaven/aclaude/releases/download/${TAG}/aclaude-a-linux-arm64"
+                sha256 "${sha256_linux_arm64}"
+              else
+                url "https://github.com/arcaven/aclaude/releases/download/${TAG}/aclaude-a-linux-amd64"
+                sha256 "${sha256_linux_amd64}"
+              end
+            end
+
+            def install
+              cpu = Hardware::CPU.arm? ? "arm64" : "amd64"
+              os = OS.mac? ? "darwin" : "linux"
+              binary = "aclaude-a-#{os}-#{cpu}"
+              bin.install binary => "aclaude-a"
+            end
+
+            def caveats
+              <<~EOS
+                aclaude-a is the alpha channel. Updates on every push to main.
+                For stable: brew install arcaven/tap/aclaude
+                Requires Claude Code CLI (claude).
+              EOS
+            end
+
+            test do
+              assert_match "aclaude", shell_output("#{bin}/aclaude-a --version 2>&1")
+            end
+          end
+          FORMULA
+
+      - name: Push to homebrew-tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/arcaven/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp aclaude-a.rb tap/Formula/aclaude-a.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/aclaude-a.rb
+          git diff --cached --quiet || git commit -m "update aclaude-a alpha formula"
+          git push

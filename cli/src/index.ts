@@ -5,13 +5,19 @@ import { loadConfig, getConfigPaths } from "./config.js";
 import { listThemes, loadTheme, getAgent, resolvePortrait, getPortraitCachePath, displayPortrait, terminalSupportsImages } from "./persona.js";
 import { startSession } from "./session.js";
 import { initTelemetry } from "./telemetry.js";
+import { runUpdate, runInstall, showVersion, listVersions, cleanOldVersions, getChannel, getCurrentVersion } from "./updater.js";
+
+const VERSION = "0.1.0";
+
+// Set version for updater to pick up
+process.env.ACLAUDE_VERSION = VERSION;
 
 const program = new Command();
 
 program
   .name("aclaude")
   .description("BOYC agent orchestration CLI")
-  .version("0.1.0");
+  .version(VERSION);
 
 // Default command — start interactive session
 program
@@ -215,6 +221,57 @@ personaCmd
     }
     console.log(`Themes with portraits: ${themeDirs.length}`);
     console.log(`Total images: ${totalImages}`);
+  });
+
+// update command
+program
+  .command("update")
+  .description("Check for and install updates")
+  .action(async () => {
+    await runUpdate();
+  });
+
+// install command (first-time setup)
+program
+  .command("install")
+  .description("Install aclaude to ~/.local/bin (first-time setup)")
+  .action(() => {
+    runInstall();
+  });
+
+// versions command
+const versionsCmd = program.command("versions").description("Manage installed versions");
+
+versionsCmd
+  .command("list")
+  .description("List installed versions")
+  .action(() => {
+    const versions = listVersions();
+    const current = getCurrentVersion();
+    const channel = getChannel();
+    if (versions.length === 0) {
+      console.log("No versions installed in ~/.local/share/aclaude/versions/");
+      return;
+    }
+    console.log(`Installed versions (${channel} channel):`);
+    for (const v of versions) {
+      const marker = v === current ? " (active)" : "";
+      console.log(`  ${v}${marker}`);
+    }
+  });
+
+versionsCmd
+  .command("clean")
+  .description("Remove old versions (keep last 3)")
+  .option("-k, --keep <n>", "number of versions to keep", "3")
+  .action((opts: { keep: string }) => {
+    const keep = parseInt(opts.keep, 10);
+    const removed = cleanOldVersions(keep);
+    if (removed.length === 0) {
+      console.log("Nothing to clean.");
+    } else {
+      console.log(`Removed ${removed.length} old version(s): ${removed.join(", ")}`);
+    }
   });
 
 program.parse();

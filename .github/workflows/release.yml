@@ -1,0 +1,264 @@
+# Stable Release
+# Triggers: tag push matching v*
+# Builds binaries, signs, creates GitHub release, updates homebrew-tap
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  BUN_VERSION: "1.3"
+
+jobs:
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: cd cli && bun install
+      - run: cd cli && bun run lint
+      - run: cd cli && bun run test
+
+  build:
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+          - os: darwin
+            arch: amd64
+            runner: macos-13
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: cd cli && bun install
+
+      - name: Build binary
+        run: |
+          cd cli
+          bun build --compile src/index.ts --outfile aclaude-${{ matrix.os }}-${{ matrix.arch }}
+
+      - name: Verify binary
+        run: |
+          cd cli
+          ./aclaude-${{ matrix.os }}-${{ matrix.arch }} --version
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.os }}-${{ matrix.arch }}
+          path: cli/aclaude-${{ matrix.os }}-${{ matrix.arch }}
+
+  sign:
+    name: Sign & Notarize (macOS)
+    needs: build
+    if: vars.SIGNING_ENABLED == 'true'
+    strategy:
+      matrix:
+        arch: [arm64, amd64]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-darwin-${{ matrix.arch }}
+
+      - name: Import signing certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+
+          echo -n "$APPLE_CERTIFICATE_BASE64" | base64 --decode -o "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      - name: Sign binary
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          codesign --force --options runtime \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            --timestamp \
+            "aclaude-darwin-${{ matrix.arch }}"
+
+      - name: Notarize binary
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          zip "aclaude-darwin-${{ matrix.arch }}.zip" "aclaude-darwin-${{ matrix.arch }}"
+          xcrun notarytool submit "aclaude-darwin-${{ matrix.arch }}.zip" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple "aclaude-darwin-${{ matrix.arch }}" || true
+
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-binaries-darwin-${{ matrix.arch }}
+          path: aclaude-darwin-${{ matrix.arch }}
+
+  release:
+    name: Create Release
+    needs: [build, sign]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.sign.result == 'success' || needs.sign.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.sign.result == 'success' && 'signed-binaries-darwin-arm64' || 'binaries-darwin-arm64' }}
+          path: dist/
+
+      - name: Download macOS amd64
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.sign.result == 'success' && 'signed-binaries-darwin-amd64' || 'binaries-darwin-amd64' }}
+          path: dist/
+
+      - name: Download Linux amd64
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-linux-amd64
+          path: dist/
+
+      - name: Download Linux arm64
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-linux-arm64
+          path: dist/
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "v${VERSION}" \
+            --generate-notes \
+            dist/*
+
+  update-tap:
+    name: Update Homebrew Tap
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*binaries-*"
+          path: dist/
+          merge-multiple: true
+
+      - name: Generate formula
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+
+          sha256_darwin_arm64=$(sha256sum dist/aclaude-darwin-arm64 | cut -d' ' -f1)
+          sha256_darwin_amd64=$(sha256sum dist/aclaude-darwin-amd64 | cut -d' ' -f1)
+          sha256_linux_arm64=$(sha256sum dist/aclaude-linux-arm64 | cut -d' ' -f1)
+          sha256_linux_amd64=$(sha256sum dist/aclaude-linux-amd64 | cut -d' ' -f1)
+
+          cat > aclaude.rb << 'FORMULA_START'
+          class Aclaude < Formula
+            desc "BYOA agent CLI with persona theming"
+            homepage "https://github.com/arcaven/aclaude"
+          FORMULA_START
+
+          cat >> aclaude.rb << FORMULA_VERSIONS
+            version "${VERSION}"
+            license "MIT"
+
+            if Hardware::CPU.arm?
+              url "https://github.com/arcaven/aclaude/releases/download/${TAG}/aclaude-darwin-arm64"
+              sha256 "${sha256_darwin_arm64}"
+            else
+              url "https://github.com/arcaven/aclaude/releases/download/${TAG}/aclaude-darwin-amd64"
+              sha256 "${sha256_darwin_amd64}"
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/arcaven/aclaude/releases/download/${TAG}/aclaude-linux-arm64"
+                sha256 "${sha256_linux_arm64}"
+              else
+                url "https://github.com/arcaven/aclaude/releases/download/${TAG}/aclaude-linux-amd64"
+                sha256 "${sha256_linux_amd64}"
+              end
+            end
+          FORMULA_VERSIONS
+
+          cat >> aclaude.rb << 'FORMULA_END'
+
+            def install
+              cpu = Hardware::CPU.arm? ? "arm64" : "amd64"
+              os = OS.mac? ? "darwin" : "linux"
+              binary = "aclaude-#{os}-#{cpu}"
+              bin.install binary => "aclaude"
+            end
+
+            def caveats
+              <<~EOS
+                aclaude requires Claude Code CLI (claude) to be installed.
+                See: https://docs.anthropic.com/en/docs/claude-code
+              EOS
+            end
+
+            test do
+              assert_match "aclaude", shell_output("#{bin}/aclaude --version 2>&1")
+            end
+          end
+          FORMULA_END
+
+      - name: Push to homebrew-tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/arcaven/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp aclaude.rb tap/Formula/aclaude.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/aclaude.rb
+          git diff --cached --quiet || git commit -m "update aclaude formula to ${GITHUB_REF_NAME}"
+          git push
