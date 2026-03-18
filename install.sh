@@ -136,7 +136,9 @@ case ":${PATH}:" in
 esac
 
 echo ""
-echo "Note: ${BIN_NAME} requires Claude Code CLI (claude) to be installed."
-echo "See: https://docs.anthropic.com/en/docs/claude-code"
+echo "Prerequisites:"
+echo "  1. Claude Code CLI (claude) — https://docs.anthropic.com/en/docs/claude-code"
+echo "  2. Anthropic API key — https://console.anthropic.com/"
+echo "     export ANTHROPIC_API_KEY=sk-ant-..."
 echo ""
 echo "Run '${BIN_NAME} --version' to verify."

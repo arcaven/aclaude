@@ -82,6 +82,18 @@ export async function startSession(
   let sessionId: string | undefined;
   let cumulativeUsage: Partial<SessionUsage> = {};
 
+  // Auth check: prefer API key for distributed use
+  const hasApiKey = !!(process.env.ANTHROPIC_API_KEY ||
+    process.env.AWS_ACCESS_KEY_ID ||  // Bedrock
+    process.env.GOOGLE_APPLICATION_CREDENTIALS);  // Vertex AI
+
+  if (!hasApiKey) {
+    console.log("Note: No API key detected. Using Claude Code's auth (personal use only).");
+    console.log("For shared/distributed use, set ANTHROPIC_API_KEY.");
+    console.log("See: https://console.anthropic.com/");
+    console.log("");
+  }
+
   console.log("Starting session (via Claude Code)...");
   if (characterName) {
     console.log(`Persona: ${agent!.character} (${theme!.name})`);
