@@ -53,10 +53,12 @@ function extractUsageFromResult(message: Record<string, unknown>): Partial<Sessi
 }
 
 function computeContextPct(usage: Partial<SessionUsage>): number | null {
-  const used = (usage.inputTokens || 0) + (usage.cacheCreationTokens || 0) + (usage.cacheReadTokens || 0);
+  // Input tokens = what's in the context window this turn.
+  // Cache read/creation tokens are billing details, not context occupancy.
+  const used = usage.inputTokens || 0;
   const size = usage.contextWindowSize || 0;
   if (!used || !size) return null;
-  return Math.floor((used / size) * 100);
+  return Math.min(100, Math.floor((used / size) * 100));
 }
 
 export async function startSession(
