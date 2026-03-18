@@ -314,7 +314,18 @@ export function runInstall(): void {
   mkdirSync(versionDir, { recursive: true });
 
   // Copy current binary to version directory
-  const currentBinary = process.argv[0];
+  // process.argv[0] is unreliable in bun compile (resolves to virtual FS)
+  // Use command -v to find the real binary on disk
+  let currentBinary: string | undefined;
+  try {
+    currentBinary = execSync(`command -v ${binaryName}`, { encoding: "utf-8", shell: "/bin/sh" }).trim();
+  } catch {
+    // Fall back to process.argv[0] if command -v fails
+    if (process.argv[0] && existsSync(process.argv[0])) {
+      currentBinary = process.argv[0];
+    }
+  }
+
   const targetBinary = join(versionDir, binaryName);
 
   if (currentBinary && existsSync(currentBinary)) {
@@ -326,6 +337,10 @@ export function runInstall(): void {
       console.log("You can manually copy the binary to:", targetBinary);
       return;
     }
+  } else {
+    console.error("Could not locate the current binary to copy.");
+    console.log("You can manually copy the binary to:", targetBinary);
+    return;
   }
 
   activateVersion(version, channel);
