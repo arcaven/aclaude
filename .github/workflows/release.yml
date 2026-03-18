@@ -244,19 +244,18 @@ jobs:
 
   update-homebrew:
     name: Update Homebrew Tap
-    needs: [build, release]
-    if: needs.release.result == 'success'
+    needs: [build, sign-and-notarize, release]
+    if: needs.release.result == 'success' && needs.sign-and-notarize.result == 'success'
     environment: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download signed binaries
+      - name: Download signed darwin binaries
         uses: actions/download-artifact@v4
         with:
-          pattern: "*binaries-*"
+          name: signed-binaries-darwin-arm64
           path: dist/
-          merge-multiple: true
 
       - name: Update Homebrew formula
         env:
