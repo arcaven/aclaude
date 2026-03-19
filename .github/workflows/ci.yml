@@ -34,6 +34,8 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: cd cli && bun install
+      - name: Generate version file
+        run: bun run cli/scripts/gen-version.ts
       - run: cd cli && bun run lint
       - run: cd cli && bun run test
 
@@ -81,18 +83,25 @@ jobs:
 
       - name: Build stable binary
         run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          bun run cli/scripts/gen-version.ts --channel stable
           cd cli
           bun build --compile src/index.ts --outfile aclaude-${{ matrix.os }}-${{ matrix.arch }}
 
       - name: Build alpha binary
         run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          bun run cli/scripts/gen-version.ts --channel alpha --tag "$TAG"
           cd cli
-          cp aclaude-${{ matrix.os }}-${{ matrix.arch }} aclaude-a-${{ matrix.os }}-${{ matrix.arch }}
+          bun build --compile src/index.ts --outfile aclaude-a-${{ matrix.os }}-${{ matrix.arch }}
 
-      - name: Verify binary
+      - name: Verify binaries
         run: |
           cd cli
+          echo "Stable:"
           ./aclaude-${{ matrix.os }}-${{ matrix.arch }} --version
+          echo "Alpha:"
+          ./aclaude-a-${{ matrix.os }}-${{ matrix.arch }} --version
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

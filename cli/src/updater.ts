@@ -280,7 +280,7 @@ export async function runUpdate(): Promise<UpdateResult> {
 
   console.log(`New version available: ${latest.version} (published ${latest.publishedAt})`);
 
-  const binaryPath = await downloadVersion(latest);
+  await downloadVersion(latest);
   activateVersion(latest.version, channel);
 
   const removed = cleanOldVersions();

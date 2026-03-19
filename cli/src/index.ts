@@ -5,7 +5,7 @@ import { loadConfig, getConfigPaths } from "./config.js";
 import { listThemes, loadTheme, getAgent, resolvePortrait, getPortraitCachePath, displayPortrait, terminalSupportsImages } from "./persona.js";
 import { startSession } from "./session.js";
 import { initTelemetry } from "./telemetry.js";
-import { runUpdate, runInstall, showVersion, listVersions, cleanOldVersions, getCurrentVersion } from "./updater.js";
+import { runUpdate, runInstall, listVersions, cleanOldVersions, getCurrentVersion } from "./updater.js";
 import { VERSION, CHANNEL } from "./version.js";
 
 const program = new Command();
@@ -59,8 +59,8 @@ configCmd
 configCmd
   .command("path")
   .description("Print config file locations")
-  .action(() => {
-    const { existsSync } = require("node:fs");
+  .action(async () => {
+    const { existsSync } = await import("node:fs");
     const paths = getConfigPaths();
     const defaultsExists = existsSync(paths.defaults);
     console.log(`Defaults:  ${defaultsExists ? paths.defaults : "(embedded in binary)"}`);
