@@ -5,12 +5,8 @@ import { loadConfig, getConfigPaths } from "./config.js";
 import { listThemes, loadTheme, getAgent, resolvePortrait, getPortraitCachePath, displayPortrait, terminalSupportsImages } from "./persona.js";
 import { startSession } from "./session.js";
 import { initTelemetry } from "./telemetry.js";
-import { runUpdate, runInstall, showVersion, listVersions, cleanOldVersions, getChannel, getCurrentVersion } from "./updater.js";
-
-const VERSION = "0.1.0";
-
-// Set version for updater to pick up
-process.env.ACLAUDE_VERSION = VERSION;
+import { runUpdate, runInstall, showVersion, listVersions, cleanOldVersions, getCurrentVersion } from "./updater.js";
+import { VERSION, CHANNEL } from "./version.js";
 
 const program = new Command();
 
@@ -250,12 +246,11 @@ versionsCmd
   .action(() => {
     const versions = listVersions();
     const current = getCurrentVersion();
-    const channel = getChannel();
     if (versions.length === 0) {
       console.log("No versions installed in ~/.local/share/aclaude/versions/");
       return;
     }
-    console.log(`Installed versions (${channel} channel):`);
+    console.log(`Installed versions (${CHANNEL} channel):`);
     for (const v of versions) {
       const marker = v === current ? " (active)" : "";
       console.log(`  ${v}${marker}`);

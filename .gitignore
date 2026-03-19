@@ -8,6 +8,7 @@ cli/aclaude
 cli/aclaude-*
 cli/.aclaude/
 cli/src/themes-embedded.ts
+cli/src/version.ts
 
 # OS
 .DS_Store

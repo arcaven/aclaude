@@ -4,15 +4,17 @@
  * Version storage: ~/.local/share/aclaude/versions/<version>/aclaude
  * Active symlink:  ~/.local/bin/aclaude (or aclaude-a for alpha)
  *
- * Channel is determined by the binary name: aclaude = stable, aclaude-a = alpha.
+ * Channel and version are determined at build time via gen-version.ts.
+ * No runtime detection — the binary knows what it is.
  */
 
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, symlinkSync, unlinkSync, readdirSync, rmSync, renameSync, chmodSync } from "node:fs";
 import { homedir, platform, arch } from "node:os";
-import { join, basename, dirname } from "node:path";
+import { join } from "node:path";
 import { Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { VERSION, CHANNEL, COMMIT, BUILD_TIME } from "./version.js";
 
 export type Channel = "stable" | "alpha";
 
@@ -33,26 +35,6 @@ export interface UpdateResult {
 const GITHUB_OWNER = "arcaven";
 const GITHUB_REPO = "aclaude";
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases`;
-
-/**
- * Detect channel from the binary name.
- * If the executable is named "aclaude-a", we're on the alpha channel.
- * process.argv is unreliable in bun compile (virtual FS path).
- * Fall back to process.env._ (shell sets this to the invoked command).
- */
-export function getChannel(): Channel {
-  // Check argv first (works in dev/node mode)
-  const argvName = basename(process.argv[1] || "");
-  if (argvName.includes("aclaude-a")) return "alpha";
-  if (argvName === "aclaude") return "stable";
-
-  // Bun compile: check $_ which contains the invoked command name
-  const invokedAs = basename(process.env._ || "");
-  if (invokedAs.includes("aclaude-a")) return "alpha";
-  if (invokedAs.includes("aclaude")) return "stable";
-
-  return "stable";
-}
 
 /**
  * Get the binary name for a channel.
@@ -96,12 +78,10 @@ export function getVersionDir(version: string): string {
 }
 
 /**
- * Get the current installed version from package.json embedded at build time.
+ * Get the current version — baked in at build time via gen-version.ts.
  */
 export function getCurrentVersion(): string {
-  // When running from source, read package.json
-  // When compiled, the version is embedded via the CLI's .version() call
-  return process.env.ACLAUDE_VERSION || "0.1.0";
+  return VERSION;
 }
 
 /**
@@ -278,11 +258,12 @@ export function isSymlinkDirInPath(): boolean {
  * Run the update flow.
  */
 export async function runUpdate(): Promise<UpdateResult> {
-  const channel = getChannel();
+  const channel = CHANNEL;
   const current = getCurrentVersion();
   const binaryName = getBinaryName(channel);
 
   console.log(`${binaryName} ${current} (${channel} channel)`);
+  console.log(`Built: ${BUILD_TIME} (${COMMIT})`);
   console.log("Checking for updates...");
 
   const latest = await checkForUpdate(channel);
@@ -315,7 +296,7 @@ export async function runUpdate(): Promise<UpdateResult> {
  * Run first-time install (setup directories, activate current binary).
  */
 export function runInstall(): void {
-  const channel = getChannel();
+  const channel = CHANNEL;
   const version = getCurrentVersion();
   const binaryName = getBinaryName(channel);
 
@@ -324,16 +305,20 @@ export function runInstall(): void {
   const versionDir = getVersionDir(version);
   mkdirSync(versionDir, { recursive: true });
 
-  // Copy current binary to version directory
-  // process.argv[0] is unreliable in bun compile (resolves to virtual FS)
-  // Use command -v to find the real binary on disk
+  // Find the currently-running binary on disk.
+  // In bun compile, process.argv[0] is a virtual FS path — useless.
+  // Try: command -v <binaryName>, then command -v for the other name,
+  // then resolve the brew symlink if applicable.
   let currentBinary: string | undefined;
-  try {
-    currentBinary = execSync(`command -v ${binaryName}`, { encoding: "utf-8", shell: "/bin/sh" }).trim();
-  } catch {
-    // Fall back to process.argv[0] if command -v fails
-    if (process.argv[0] && existsSync(process.argv[0])) {
-      currentBinary = process.argv[0];
+  for (const name of [binaryName, "aclaude", "aclaude-a"]) {
+    try {
+      const found = execSync(`command -v ${name}`, { encoding: "utf-8", shell: "/bin/sh" }).trim();
+      if (found && existsSync(found)) {
+        currentBinary = found;
+        break;
+      }
+    } catch {
+      // not found, try next
     }
   }
 
@@ -368,7 +353,7 @@ export function runInstall(): void {
  * Show version info with optional update check.
  */
 export async function showVersion(check: boolean = false): Promise<void> {
-  const channel = getChannel();
+  const channel = CHANNEL;
   const current = getCurrentVersion();
   const binaryName = getBinaryName(channel);
 
