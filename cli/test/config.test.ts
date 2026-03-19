@@ -32,8 +32,8 @@ describe("config", () => {
       const config = loadConfig();
       expect(config.session.model).toBe("claude-sonnet-4-6");
       expect(config.session.max_tokens).toBe(16384);
-      expect(config.persona.theme).toBe("hitchhikers-guide");
-      expect(config.persona.role).toBe("dev");
+      expect(config.persona.theme).toBe("the-expanse");
+      expect(config.persona.role).toBe("naomi");
       expect(config.persona.immersion).toBe("high");
       expect(config.statusline.enabled).toBe(true);
       expect(config.telemetry.enabled).toBe(false);
@@ -47,7 +47,7 @@ describe("config", () => {
       expect(config.session.model).toBe("claude-opus-4-6");
       expect(config.session.max_tokens).toBe(32768);
       // Other defaults preserved
-      expect(config.persona.theme).toBe("hitchhikers-guide");
+      expect(config.persona.theme).toBe("the-expanse");
     });
 
     it("applies env overrides", () => {
