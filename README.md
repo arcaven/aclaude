@@ -20,6 +20,18 @@ brew install arcaven/tap/aclaude-a
 
 Stable channel (`aclaude` / `arcaven/tap/aclaude`) will be available once a tagged release is cut. Until then, use the alpha channel — it tracks main and is signed and notarized.
 
+### Uninstall
+
+```sh
+# curl-installed
+curl -fsSL https://raw.githubusercontent.com/arcaven/aclaude/main/install.sh | bash -s -- --uninstall
+
+# Homebrew
+brew uninstall aclaude-a    # or aclaude for stable
+```
+
+Config at `~/.config/aclaude/` is preserved by uninstall. Delete manually if unwanted.
+
 ## Usage
 
 ```sh
