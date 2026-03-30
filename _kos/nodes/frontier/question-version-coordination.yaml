@@ -1,0 +1,20 @@
+id: question-version-coordination
+type: question
+confidence: frontier
+title: "How should brew and self-update coordinate?"
+content: |
+  Brew and self-update are parallel version managers with no coordination.
+  gen-version.ts injects VERSION, CHANNEL, COMMIT, BUILD_TIME at build
+  time. Self-update validated end-to-end.
+
+  Open: should aclaude detect brew install and defer to brew upgrade?
+  Or should one channel win? Dual-track (alpha via self-update, stable
+  via brew) is the current model but untested in practice.
+edges:
+  - target: aae-orc::question-aclaude-distribution
+    type: derives
+    note: "Local form of orchestrator F11"
+provenance:
+  created_by: human
+  session: session-008
+  created_at: "2026-03-30"

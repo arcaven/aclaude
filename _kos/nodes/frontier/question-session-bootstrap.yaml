@@ -1,0 +1,28 @@
+id: question-session-bootstrap
+type: question
+confidence: frontier
+title: "How should aclaude sessions be bootstrapped?"
+content: |
+  Docker-like layering model: entrypoint (baked — "you are aclaude"),
+  installed base (packs, themes, commands — updateable), session injection
+  (persona, model, permissions — ephemeral).
+
+  Open tension: Claude Code config inheritance via settingSources. Users
+  may want full inheritance (additive), isolation (settingSources: []),
+  or switching between vanilla Claude Code and aclaude. This should be
+  configurable per-session, possibly per-workspace in marvel.
+
+  For autonomous agents (marvel teams): different bootstrap. No TUI
+  instructions, no persona flair. Task assignment, tool permissions,
+  workspace boundaries. Same binary, different entrypoint.
+edges:
+  - target: aae-orc::question-session-bootstrap
+    type: derives
+    note: "Local form of orchestrator F18"
+  - target: question-two-audience
+    type: derives
+    note: "Human and agent bootstrap are fundamentally different"
+provenance:
+  created_by: human
+  session: session-008
+  created_at: "2026-03-30"

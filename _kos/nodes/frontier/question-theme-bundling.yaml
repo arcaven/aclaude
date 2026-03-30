@@ -1,0 +1,24 @@
+id: question-theme-bundling
+type: question
+confidence: frontier
+title: "Should themes/personas be bundled or loaded at runtime?"
+content: |
+  Currently 100 theme YAMLs embedded in binary via embed-themes.ts (~1.7MB).
+  Portraits already external (global cache). Agent subprocess (Claude Code)
+  cannot see embedded themes.
+
+  Runtime loading: pack system (marvel), smaller binary, multi-console reuse.
+  Bundling: zero-dependency, offline, version coherence.
+  Hybrid: bundle minimal default, load additional from ~/.local/share/aclaude/
+  or via marvel pack resolution.
+edges:
+  - target: aae-orc::question-persona-pack
+    type: derives
+    note: "Local form of orchestrator F12"
+  - target: aae-orc::question-persona-model
+    type: derives
+    note: "Pack format depends on persona model"
+provenance:
+  created_by: human
+  session: session-008
+  created_at: "2026-03-30"
