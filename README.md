@@ -2,7 +2,7 @@
 
 An opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) distribution. Wraps the Claude Code CLI with persona theming, configurable defaults, tmux session management and some additional features yet to be described here.
 
-aclaude is an exploration of features useful in Claude Code-like programs when used with systems like [marvel](https://github.com/arcavenae/marvel) [switchboard](https://github.com/arcavenae/switchboard) [specticle](https://github.com/arcavenae/specticle) and an also an expression of preferences layered on top of the Claude Code foundation.
+aclaude is an exploration of features useful in Claude Code-like programs when used with systems like [marvel](https://github.com/arcavenae/marvel) [switchboard](https://github.com/arcavenae/switchboard) [spectacle](https://github.com/arcavenae/spectacle) and an also an expression of preferences layered on top of the Claude Code foundation.
 
 ## Install
 
