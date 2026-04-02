@@ -95,6 +95,11 @@ vitest@3.2.4
 - **axios does not appear** in the resolved package list of any CI run.
 - **`plain-crypto-js` does not appear** in any CI log output.
 - All runs installed from lockfile (`[migrated lockfile from package-lock.json]`).
+  Note: bun's lockfile migration converts npm's `package-lock.json` format but
+  is not equivalent to `--frozen-lockfile`. Migration may resolve differently
+  than npm for packages not precisely represented in the lockfile. In this case,
+  the protection held because axios was not in the dependency tree at all, not
+  because the lockfile pinned it to a safe version.
 - Package counts were consistent across runs (200–202 packages).
 
 ---

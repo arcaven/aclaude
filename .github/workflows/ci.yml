@@ -148,6 +148,7 @@ jobs:
           ACLAUDE_CHANNEL: alpha
           ACLAUDE_TAG: ${{ steps.version.outputs.tag }}
         run: |
+          cargo clean --release --target ${{ matrix.target }}
           cargo build --release --target ${{ matrix.target }}
           cp target/${{ matrix.target }}/release/aclaude ${{ matrix.artifact_name }}-alpha
           # Rename to aclaude-a convention

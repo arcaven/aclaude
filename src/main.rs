@@ -2,6 +2,7 @@
 
 use aclaude::config;
 use aclaude::persona;
+use aclaude::portrait;
 use aclaude::session;
 use aclaude::updater;
 use clap::{Parser, Subcommand};
@@ -77,7 +78,26 @@ enum PersonaAction {
         /// Show specific agent role
         #[arg(long, default_value = "dev")]
         agent: String,
+
+        /// Display portrait inline (Kitty/Ghostty terminals)
+        #[arg(short = 'p', long)]
+        portrait: bool,
+
+        /// Portrait position relative to info card
+        #[arg(long, default_value = "top")]
+        portrait_position: String,
+
+        /// Portrait alignment
+        #[arg(long, default_value = "left")]
+        portrait_align: String,
+
+        /// Portrait size
+        #[arg(long, default_value = "original")]
+        portrait_size: String,
     },
+
+    /// Show portrait cache status
+    Portraits,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -145,8 +165,31 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
             }
-            PersonaAction::Show { name, agent } => {
+            PersonaAction::Show {
+                name,
+                agent,
+                portrait: show_portrait,
+                portrait_position,
+                portrait_align,
+                portrait_size,
+            } => {
                 let theme = persona::load_theme(&name)?;
+                let agent_data = persona::get_agent(&theme, &agent)?;
+                let portraits = portrait::resolve_portrait(&name, agent_data, Some(&agent));
+
+                // Portrait before card (position: top)
+                if show_portrait && portrait_position == "top" {
+                    if let Some(path) = portraits.best_for_size(&portrait_size) {
+                        if !portrait::display_portrait(path, &portrait_align) {
+                            println!(
+                                "(terminal does not support inline images — try Kitty or Ghostty)"
+                            );
+                        }
+                        println!();
+                    }
+                }
+
+                // Info card
                 println!("Theme: {} ({})", theme.theme.name, theme.category);
                 println!("Description: {}", theme.theme.description);
                 if let Some(title) = &theme.theme.user_title {
@@ -157,38 +200,46 @@ fn main() -> anyhow::Result<()> {
                     roles.sort();
                     roles
                         .iter()
-                        .map(|r| r.as_str())
+                        .map(|s| s.as_str())
                         .collect::<Vec<_>>()
                         .join(", ")
                 });
                 println!();
-
-                if let Ok(a) = persona::get_agent(&theme, &agent) {
-                    println!("Agent: {} (role: {agent})", a.character);
-                    println!("  Style: {}", a.style);
-                    println!("  Expertise: {}", a.expertise);
-                    println!("  Trait: {}", a.r#trait);
-                    if !a.quirks.is_empty() {
-                        println!("  Quirks: {}", a.quirks.join("; "));
+                println!("Agent: {} (role: {agent})", agent_data.character);
+                println!("  Style: {}", agent_data.style);
+                println!("  Expertise: {}", agent_data.expertise);
+                println!("  Trait: {}", agent_data.r#trait);
+                if !agent_data.quirks.is_empty() {
+                    println!("  Quirks: {}", agent_data.quirks.join("; "));
+                }
+                if !agent_data.catchphrases.is_empty() {
+                    println!("  Catchphrases:");
+                    for phrase in &agent_data.catchphrases {
+                        println!("    - \"{phrase}\"");
                     }
-                    if !a.catchphrases.is_empty() {
-                        println!("  Catchphrases:");
-                        for phrase in &a.catchphrases {
-                            println!("    - \"{phrase}\"");
+                }
+                if portraits.has_any() {
+                    println!("  Portraits: [{}]", portraits.available_sizes().join(", "));
+                }
+
+                // Portrait after card (position: bottom)
+                if show_portrait && portrait_position == "bottom" {
+                    println!();
+                    if let Some(path) = portraits.best_for_size(&portrait_size) {
+                        if !portrait::display_portrait(path, &portrait_align) {
+                            println!(
+                                "(terminal does not support inline images — try Kitty or Ghostty)"
+                            );
                         }
                     }
-                } else {
-                    eprintln!("Role '{agent}' not found in theme '{name}'");
-                    eprintln!(
-                        "Available: {}",
-                        theme
-                            .agents
-                            .keys()
-                            .map(String::as_str)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
                 }
+            }
+            PersonaAction::Portraits => {
+                let cache_dir = portrait::portrait_cache_dir();
+                let (themes, images) = portrait::cache_status();
+                println!("Portrait cache: {}", cache_dir.display());
+                println!("Themes with portraits: {themes}");
+                println!("Total images: {images}");
             }
         },
 

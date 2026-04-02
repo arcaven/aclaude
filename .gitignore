@@ -9,6 +9,10 @@
 *~
 .DS_Store
 
+# Environment / secrets
+.env
+.env.local
+
 # Local state
 .drift-snapshot.json
 

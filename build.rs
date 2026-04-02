@@ -28,24 +28,9 @@ fn generate_version() {
         })
         .unwrap_or_else(|| "unknown".to_string());
 
-    // Simple UTC timestamp without chrono dependency in build script
-    let build_time = Command::new("date")
-        .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                String::from_utf8(o.stdout)
-                    .ok()
-                    .map(|s| s.trim().to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "unknown".to_string());
+    let build_time = chrono::Utc::now().to_rfc3339();
 
     let channel = env::var("ACLAUDE_CHANNEL").unwrap_or_else(|_| "alpha".to_string());
-
     let tag = env::var("ACLAUDE_TAG").unwrap_or_else(|_| format!("{version}-{commit}"));
 
     println!("cargo:rustc-env=ACLAUDE_VERSION={version}");
@@ -54,17 +39,16 @@ fn generate_version() {
     println!("cargo:rustc-env=ACLAUDE_CHANNEL={channel}");
     println!("cargo:rustc-env=ACLAUDE_TAG={tag}");
 
-    // Rebuild if git HEAD changes
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-env-changed=ACLAUDE_CHANNEL");
     println!("cargo:rerun-if-env-changed=ACLAUDE_TAG");
 }
 
-/// Embed all persona theme YAMLs at compile time.
+/// Embed all persona theme YAMLs at compile time using raw string literals.
 ///
-/// Generates a `themes_embedded.rs` file containing a function that returns
-/// a map of theme slug → YAML content. Themes are available at runtime
-/// without filesystem access.
+/// Generates a Rust source file containing a function that returns a HashMap
+/// of theme slug to YAML content. Uses `r#"..."#` raw strings to avoid
+/// escaping issues with newlines, quotes, and backslashes in YAML content.
 fn embed_themes() {
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
     let themes_dir = Path::new("personas/themes");
@@ -93,6 +77,9 @@ fn embed_themes() {
             let content = fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
             themes.insert(slug, content);
+
+            // Rebuild when individual theme files change
+            println!("cargo:rerun-if-changed={}", path.display());
         }
     }
 
@@ -103,9 +90,14 @@ fn embed_themes() {
     );
 
     for (slug, content) in &themes {
-        // Escape for Rust string literal
-        let escaped = content.replace('\\', "\\\\").replace('"', "\\\"");
-        code.push_str(&format!("    m.insert(\"{slug}\", \"{escaped}\");\n"));
+        // Use raw string literals to avoid all escaping issues.
+        // r#"..."# handles newlines, quotes, backslashes natively.
+        // Only fails if content contains the sequence "# — theme YAML never does.
+        assert!(
+            !content.contains("\"#"),
+            "theme {slug} contains raw string delimiter sequence"
+        );
+        code.push_str(&format!("    m.insert(\"{slug}\", r#\"{content}\"#);\n"));
     }
 
     code.push_str("    m\n}\n");
@@ -113,5 +105,6 @@ fn embed_themes() {
     let dest = Path::new(&out_dir).join("themes_embedded.rs");
     fs::write(&dest, code).expect("failed to write themes_embedded.rs");
 
+    // Also rebuild if themes directory itself changes (files added/removed)
     println!("cargo:rerun-if-changed=personas/themes");
 }

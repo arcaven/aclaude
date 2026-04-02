@@ -23,17 +23,16 @@ anyhow = "1"
 thiserror = "2"
 
 # File system / paths
-dirs-next = "2"
-walkdir = "2"
+dirs = "6"
 
 # Timestamps
 chrono = { version = "0.4", features = ["serde"] }
 
 # HTTP (self-update via GitHub releases)
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
-# Content hashing
-sha2 = "0.10"
+[build-dependencies]
+chrono = "0.4"
 
 [dev-dependencies]
 insta = { version = "1", features = ["yaml", "json"] }

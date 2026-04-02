@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-
-use std::env;
 use std::fs;
 use std::path::PathBuf;
 
@@ -14,13 +11,6 @@ struct GitHubRelease {
     tag_name: String,
     prerelease: bool,
     published_at: String,
-    assets: Vec<GitHubAsset>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,28 +37,9 @@ impl Channel {
 
 /// Version directory: ~/.local/share/aclaude/versions/{version}/
 fn versions_dir() -> PathBuf {
-    dirs_next::data_dir()
+    dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
         .join("aclaude/versions")
-}
-
-/// Symlink target: ~/.local/bin/{binary_name}
-fn bin_path(channel: Channel) -> PathBuf {
-    dirs_next::home_dir()
-        .unwrap_or_else(|| PathBuf::from("~"))
-        .join(".local/bin")
-        .join(channel.binary_name())
-}
-
-/// Platform-specific asset name for GitHub releases.
-fn asset_name(channel: Channel) -> String {
-    let os = env::consts::OS;
-    let arch = match env::consts::ARCH {
-        "aarch64" => "arm64",
-        "x86_64" => "amd64",
-        a => a,
-    };
-    format!("{}-{os}-{arch}", channel.binary_name())
 }
 
 /// Check for available updates on GitHub.

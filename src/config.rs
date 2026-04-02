@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -143,7 +141,7 @@ fn xdg_config_home() -> PathBuf {
     env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            dirs_next::home_dir()
+            dirs::home_dir()
                 .unwrap_or_else(|| PathBuf::from("~"))
                 .join(".config")
         })
@@ -159,6 +157,7 @@ pub fn config_paths() -> ConfigPaths {
 }
 
 /// Load a TOML file into a generic table. Returns empty table if missing.
+/// Warns on stderr if the file exists but fails to parse.
 fn load_toml_table(path: &Path) -> toml::Table {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
@@ -166,7 +165,10 @@ fn load_toml_table(path: &Path) -> toml::Table {
     };
     match content.parse::<toml::Table>() {
         Ok(table) => table,
-        Err(_) => toml::Table::new(),
+        Err(e) => {
+            eprintln!("warning: failed to parse {}: {e}", path.display());
+            toml::Table::new()
+        }
     }
 }
 

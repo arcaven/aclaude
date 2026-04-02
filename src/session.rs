@@ -1,34 +1,31 @@
-#![allow(dead_code)]
-
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 use crate::config::AclaudeConfig;
 use crate::error::{AclaudeError, Result};
 use crate::persona;
+use crate::protocol::{self, ClaudeEvent, SessionUsage};
+use crate::statusline;
 
 /// Check that the `claude` CLI is available.
 pub fn find_claude() -> Result<String> {
-    let output = Command::new("sh")
-        .args(["-c", "command -v claude"])
-        .output()
-        .map_err(|_| AclaudeError::ClaudeNotFound)?;
+    let output = Command::new("claude")
+        .arg("--version")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
 
-    if !output.status.success() {
-        return Err(AclaudeError::ClaudeNotFound);
+    match output {
+        Ok(o) if o.status.success() => Ok("claude".to_string()),
+        _ => Err(AclaudeError::ClaudeNotFound),
     }
-
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if path.is_empty() {
-        return Err(AclaudeError::ClaudeNotFound);
-    }
-
-    Ok(path)
 }
 
 /// Start an interactive session with Claude Code.
 ///
 /// Spawns `claude` as a subprocess using the NDJSON streaming protocol.
-/// The persona system prompt is injected via --append-system-prompt.
+/// Reads structured events from stdout, writes user input to stdin,
+/// and tracks token usage across turns.
 pub fn start_session(config: &AclaudeConfig) -> Result<()> {
     let claude_path = find_claude()?;
 
@@ -40,21 +37,104 @@ pub fn start_session(config: &AclaudeConfig) -> Result<()> {
     };
 
     let mut cmd = Command::new(&claude_path);
-    cmd.stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
+    cmd.args(["--output-format", "stream-json"])
+        .args(["--input-format", "stream-json"])
+        .args(["--verbose"])
+        .args(["--model", &config.session.model])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
 
-    // Pass model
-    cmd.args(["--model", &config.session.model]);
-
-    // Inject persona as appended system prompt
     if !system_prompt.is_empty() {
         cmd.args(["--append-system-prompt", &system_prompt]);
     }
 
-    let status = cmd.status().map_err(|e| AclaudeError::Session {
+    let mut child = cmd.spawn().map_err(|e| AclaudeError::Session {
         message: format!("failed to start claude: {e}"),
     })?;
+
+    let stdout = child.stdout.take().expect("stdout piped");
+    // stdin kept alive for future interactive input support
+    let _stdin = child.stdin.take().expect("stdin piped");
+
+    let reader = BufReader::new(stdout);
+    let mut usage = SessionUsage::default();
+    let mut _session_id = String::new();
+
+    // Read NDJSON events from claude
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+
+        if line.is_empty() {
+            continue;
+        }
+
+        let event = match protocol::parse_event(&line) {
+            Some(e) => e,
+            None => continue,
+        };
+
+        match event {
+            ClaudeEvent::System { session_id: sid } => {
+                _session_id = sid;
+            }
+            ClaudeEvent::Assistant { message } => {
+                // Print text content
+                for block in &message.content {
+                    if block.block_type == "text" {
+                        if let Some(text) = &block.text {
+                            print!("{text}");
+                            std::io::stdout().flush().ok();
+                        }
+                    } else if block.block_type == "tool_use" {
+                        if let Some(name) = &block.name {
+                            usage.tool_uses.push(name.clone());
+                        }
+                    }
+                }
+
+                // Track usage
+                if let Some(u) = &message.usage {
+                    usage.add_turn(u);
+
+                    // Update tmux statusline if enabled
+                    if config.statusline.enabled {
+                        let theme = persona::load_theme(&config.persona.theme).ok();
+                        let agent = theme
+                            .as_ref()
+                            .and_then(|t| persona::get_agent(t, &config.persona.role).ok());
+                        let character_name = agent
+                            .map(|a| a.character.clone())
+                            .unwrap_or_else(|| "aclaude".to_string());
+                        let context_pct = usage.context_pct(200_000);
+                        let left = statusline::render_statusline(
+                            config,
+                            &character_name,
+                            Some(context_pct),
+                        );
+                        let right = statusline::build_progress_bar(context_pct, 10);
+                        statusline::write_tmux_cache(&left, &right);
+                    }
+                }
+            }
+            ClaudeEvent::Result { payload } => {
+                usage.set_result(&payload);
+                break;
+            }
+            ClaudeEvent::Unknown { .. } => {}
+        }
+    }
+
+    // Wait for process to exit
+    let status = child.wait().map_err(|e| AclaudeError::Session {
+        message: format!("failed to wait for claude: {e}"),
+    })?;
+
+    // Print usage summary
+    usage.print_summary();
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
