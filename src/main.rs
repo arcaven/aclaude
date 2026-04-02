@@ -38,6 +38,14 @@ struct Cli {
     /// Immersion level override
     #[arg(short = 'i', long)]
     immersion: Option<String>,
+
+    /// One-shot prompt (non-interactive, like claude -p)
+    #[arg(short = 'p', long)]
+    prompt: Option<String>,
+
+    /// Use NDJSON streaming protocol (agent/programmatic mode)
+    #[arg(long)]
+    streaming: bool,
 }
 
 #[derive(Subcommand)]
@@ -137,9 +145,19 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         None => {
-            // Default: start interactive session
             let cfg = config::load_config(cli_overrides)?;
-            session::start_session(&cfg)?;
+            if let Some(prompt) = &cli.prompt {
+                // One-shot prompt mode
+                let result = session::run_prompt(&cfg, prompt)?;
+                print!("{result}");
+            } else if cli.streaming {
+                // NDJSON streaming protocol (agent/programmatic mode)
+                let usage = session::start_streaming_session(&cfg)?;
+                usage.print_summary();
+            } else {
+                // Default: interactive TUI session
+                session::start_session(&cfg)?;
+            }
         }
 
         Some(Commands::Config) => {
