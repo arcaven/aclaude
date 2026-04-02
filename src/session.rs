@@ -23,13 +23,51 @@ pub fn find_claude() -> Result<String> {
 
 /// Start an interactive session with Claude Code.
 ///
-/// Spawns `claude` as a subprocess using the NDJSON streaming protocol.
-/// Reads structured events from stdout, writes user input to stdin,
-/// and tracks token usage across turns.
+/// Spawns `claude` with inherited stdio so the user gets the full Claude Code
+/// TUI experience. The persona system prompt is injected via --append-system-prompt.
 pub fn start_session(config: &AclaudeConfig) -> Result<()> {
     let claude_path = find_claude()?;
 
-    // Build persona prompt
+    let system_prompt = {
+        let theme = persona::load_theme(&config.persona.theme)?;
+        let agent = persona::get_agent(&theme, &config.persona.role)?;
+        persona::build_system_prompt(&theme, agent, &config.persona.immersion)
+    };
+
+    let mut cmd = Command::new(&claude_path);
+    cmd.args(["--model", &config.session.model])
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    if !system_prompt.is_empty() {
+        cmd.args(["--append-system-prompt", &system_prompt]);
+    }
+
+    let status = cmd.status().map_err(|e| AclaudeError::Session {
+        message: format!("failed to start claude: {e}"),
+    })?;
+
+    if !status.success() {
+        let code = status.code().unwrap_or(-1);
+        if code != 0 {
+            return Err(AclaudeError::Session {
+                message: format!("claude exited with code {code}"),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+/// Start a programmatic session using the NDJSON streaming protocol.
+///
+/// Spawns `claude` with structured JSON I/O for programmatic access to
+/// token usage, tool invocations, and session metadata. Used for agent
+/// mode and non-interactive automation.
+pub fn start_streaming_session(config: &AclaudeConfig) -> Result<SessionUsage> {
+    let claude_path = find_claude()?;
+
     let system_prompt = {
         let theme = persona::load_theme(&config.persona.theme)?;
         let agent = persona::get_agent(&theme, &config.persona.role)?;
@@ -61,7 +99,6 @@ pub fn start_session(config: &AclaudeConfig) -> Result<()> {
     let mut usage = SessionUsage::default();
     let mut _session_id = String::new();
 
-    // Read NDJSON events from claude
     for line in reader.lines() {
         let line = match line {
             Ok(l) => l,
@@ -82,7 +119,6 @@ pub fn start_session(config: &AclaudeConfig) -> Result<()> {
                 _session_id = sid;
             }
             ClaudeEvent::Assistant { message } => {
-                // Print text content
                 for block in &message.content {
                     if block.block_type == "text" {
                         if let Some(text) = &block.text {
@@ -96,11 +132,9 @@ pub fn start_session(config: &AclaudeConfig) -> Result<()> {
                     }
                 }
 
-                // Track usage
                 if let Some(u) = &message.usage {
                     usage.add_turn(u);
 
-                    // Update tmux statusline if enabled
                     if config.statusline.enabled {
                         let theme = persona::load_theme(&config.persona.theme).ok();
                         let agent = theme
@@ -128,24 +162,9 @@ pub fn start_session(config: &AclaudeConfig) -> Result<()> {
         }
     }
 
-    // Wait for process to exit
-    let status = child.wait().map_err(|e| AclaudeError::Session {
-        message: format!("failed to wait for claude: {e}"),
-    })?;
+    let _ = child.wait();
 
-    // Print usage summary
-    usage.print_summary();
-
-    if !status.success() {
-        let code = status.code().unwrap_or(-1);
-        if code != 0 {
-            return Err(AclaudeError::Session {
-                message: format!("claude exited with code {code}"),
-            });
-        }
-    }
-
-    Ok(())
+    Ok(usage)
 }
 
 /// Run a one-shot prompt (non-interactive).
