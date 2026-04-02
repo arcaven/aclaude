@@ -4,7 +4,7 @@ Open questions about what aclaude should be. These are not issues or TODOs —
 they're uncertainties that probing is expected to resolve. Cross-referenced
 with aae-orc charter frontier items.
 
-Last updated: 2026-03-18
+Last updated: 2026-04-01 (harvest: Rust rewrite)
 
 ---
 
@@ -23,50 +23,36 @@ flair. Doesn't need TUI. Needs fast startup, minimal overhead, programmatic
 control, predictable behavior. May not need themes at all — or needs exactly
 one, injected at launch.
 
-These may not be the same binary. Or the same language. Or the same SDK.
-The current implementation serves neither optimally: the SDK wrapper adds
-startup lag (F14: ~15s first prompt) that hurts human UX, while the embedded
-themes and persona system add binary size and complexity that autonomous
-agents don't use.
+The Rust rewrite gives both audiences a fast, portable binary. The question
+is now about runtime behavior: should aclaude have a --headless or --agent
+flag? Is this one binary with modes, or two binaries? The subprocess protocol
+(NDJSON) is the same for both audiences.
 
 Charter: F13 (UX parity), F14 (TUI), F16 (assumption provenance).
 
-## Should aclaude be TypeScript?
+## ~~Should aclaude be TypeScript?~~ RESOLVED
 
-TypeScript was inherited from pennyfarthing. It works: bun compile produces
-signed binaries, themes embed, the Agent SDK is Node.js-native. But:
+**Answered: No. Rust.** Rewritten 2026-04-01 following the axios npm supply
+chain incident. See finding-001-rust-rewrite, docs/security/axios-supply-chain-2026-03-31.md.
 
-- 15-second first prompt latency (F14). Structural? Fixable? Intrinsic to
-  subprocess startup?
-- No TUI without additional frameworks (ink, blessed). Claude Code's TUI
-  is not exposed through the SDK.
-- bun compile creates a virtual FS boundary that broke 5+ features
-  (F5-F7, F16, F19). Consistent fix pattern but persistent friction.
-- 63MB binary for what is essentially a config wrapper + persona injector.
+Drivers: supply chain safety (no npm), portability (static binary), performance
+(native startup, smaller binary), ecosystem alignment (Go/Rust platform).
+Trade-off accepted: higher development cost for UI/string work.
 
-Alternatives not yet evaluated:
-- **Go** — would match marvel/switchboard. ldflags for version injection.
-  Native binary, fast startup. No Agent SDK (would need to spawn claude
-  CLI directly). TUI libraries available (bubbletea, tcell).
-- **Rust** — performance, small binary, plugin system possibilities.
-  No Agent SDK. Higher development cost.
-- **Python** — Agent SDK exists. Packaging is worse (pyinstaller, etc.).
-  Performance likely worse.
-
-Not proposing a rewrite. Proposing that this question be examined rather
-than assumed settled. The distribution probe (F11) validated that bun
-compile *works* — it did not validate that TypeScript is the right choice.
-
-Charter: F8 (bootstrapping through probe code), F16 (assumption provenance).
+Charter: B1 (Rust Implementation). Previously F2 (Language Choice).
 
 ## Should themes/personas be bundled or loaded?
 
-Currently: 100 theme YAMLs embedded in the binary via embed-themes.ts
-(~1.7MB). Portraits are already external (global cache). The agent
-subprocess (Claude Code) cannot see embedded themes (F20).
+Currently: 118 theme YAMLs embedded in binary via build.rs compile-time code
+generation. Portraits are already external (global cache). The agent subprocess
+(Claude Code) cannot introspect embedded themes.
+
+Rust's compile-time embedding (build.rs) is more reliable than bun compile's
+virtual FS was — no path resolution friction, no broken features. This makes
+bundling more attractive than it was in TypeScript.
 
 Arguments for loading at runtime:
-- Autonomous agents need one theme or none. Bundling 100 is waste.
+- Autonomous agents need one theme or none. Bundling 118 is waste.
 - Pack system (marvel) should manage themes as content, not code.
 - Decoupling enables other consoles (zclaude, dclaude) to use same themes.
 - Smaller binary if themes are external.
@@ -85,31 +71,33 @@ Charter: F12 (persona themes as content pack), F15 (persona model).
 
 Docker-like layering model:
 
-1. **Entrypoint** (baked in) — "you are aclaude." System prompt segment
-   via `preset: 'claude_code', append: personaPrompt`. Always present.
+1. **Entrypoint** (baked in) — "you are aclaude." System prompt injected
+   via `--append-system-prompt`. Always present.
 2. **Installed base** (on disk) — packs, themes, commands. Updateable
    independently of the binary.
 3. **Session injection** (per-launch) — persona, model, permissions,
    feature flags. Ephemeral.
 
 Open tension: aclaude inherits Claude Code's config (`~/.claude/`,
-`.claude/rules/`, CLAUDE.md) via `settingSources`. Users may want full
-inheritance, isolation, or switching between vanilla Claude Code and
-aclaude. This needs to be a preference, not hardcoded.
+`.claude/rules/`, CLAUDE.md). Users may want full inheritance, isolation,
+or switching between vanilla Claude Code and aclaude. This needs to be a
+preference, not hardcoded.
 
 For autonomous agents (marvel teams): bootstrap is different. No TUI
 instructions. Task assignment, tool permissions, workspace boundaries.
-Same binary, different entrypoint.
+Same binary, different CLI flags.
 
 Charter: F18 (session bootstrap and context layering).
 
 ## Version identity and distribution coordination
 
-Solved: gen-version.ts injects VERSION, CHANNEL, COMMIT, BUILD_TIME at
-build time. Self-update validated end-to-end.
+build.rs generate_version() injects VERSION, CHANNEL, COMMIT, BUILD_TIME
+at compile time via cargo rustc-env directives. Self-update (updater.rs)
+validated in TypeScript era, needs re-validation for Rust artifacts.
 
-Open: brew and self-update are parallel version managers (F27). No
-coordination. Design question: should aclaude detect brew install and
-defer to `brew upgrade`? Or should one channel win?
+Open: brew and self-update are parallel version managers. No coordination.
+Should aclaude detect brew install and defer to `brew upgrade`? Or should
+one channel win? Dual-track (alpha via self-update, stable via brew) is
+the design but untested for Rust distribution.
 
 Charter: F11 (distribution model).

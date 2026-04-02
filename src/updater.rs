@@ -37,7 +37,7 @@ impl Channel {
 
 /// Version directory: ~/.local/share/aclaude/versions/{version}/
 fn versions_dir() -> PathBuf {
-    dirs::data_dir()
+    crate::paths::data_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
         .join("aclaude/versions")
 }

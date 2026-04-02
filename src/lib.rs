@@ -1,5 +1,6 @@
 pub mod config;
 pub mod error;
+pub mod paths;
 pub mod persona;
 pub mod portrait;
 pub mod protocol;

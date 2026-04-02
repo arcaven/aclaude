@@ -4,17 +4,28 @@ confidence: frontier
 title: "How should brew and self-update coordinate?"
 content: |
   Brew and self-update are parallel version managers with no coordination.
-  gen-version.ts injects VERSION, CHANNEL, COMMIT, BUILD_TIME at build
-  time. Self-update validated end-to-end.
+  build.rs generate_version() injects VERSION, CHANNEL, COMMIT, BUILD_TIME
+  at compile time via cargo rustc-env directives.
+
+  Post-rewrite: the version injection mechanism changed (gen-version.ts →
+  build.rs) but the coordination question is unchanged. Self-update
+  (updater.rs) and Homebrew tap are both distribution channels that need
+  to coexist or have one defer to the other.
 
   Open: should aclaude detect brew install and defer to brew upgrade?
   Or should one channel win? Dual-track (alpha via self-update, stable
-  via brew) is the current model but untested in practice.
+  via brew) is the design but needs re-validation for Rust artifacts
+  (cargo build instead of bun compile).
 edges:
   - target: aae-orc::question-aclaude-distribution
     type: derives
     note: "Local form of orchestrator F11"
+  - target: decision-language-rust
+    type: informed-by
+    note: "Build mechanism changed but coordination question unchanged"
 provenance:
   created_by: human
   session: session-008
   created_at: "2026-03-30"
+  updated_at: "2026-04-01"
+  updated_by: harvest-rust-rewrite

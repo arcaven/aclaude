@@ -7,14 +7,20 @@ content: |
   installed base (packs, themes, commands — updateable), session injection
   (persona, model, permissions — ephemeral).
 
-  Open tension: Claude Code config inheritance via settingSources. Users
-  may want full inheritance (additive), isolation (settingSources: []),
-  or switching between vanilla Claude Code and aclaude. This should be
-  configurable per-session, possibly per-workspace in marvel.
+  Post-rewrite: aclaude spawns `claude` CLI as a subprocess with
+  --append-system-prompt for persona injection. No Agent SDK —
+  the NDJSON subprocess protocol is the integration point. Session
+  modes: interactive (TUI passthrough), one-shot (-p prompt), and
+  streaming agent (NDJSON).
+
+  Open tension: Claude Code config inheritance. Users may want
+  full inheritance (additive), isolation, or switching between
+  vanilla Claude Code and aclaude. This should be configurable
+  per-session, possibly per-workspace in marvel.
 
   For autonomous agents (marvel teams): different bootstrap. No TUI
   instructions, no persona flair. Task assignment, tool permissions,
-  workspace boundaries. Same binary, different entrypoint.
+  workspace boundaries. Same binary, different CLI flags.
 edges:
   - target: aae-orc::question-session-bootstrap
     type: derives
@@ -22,7 +28,12 @@ edges:
   - target: question-two-audience
     type: derives
     note: "Human and agent bootstrap are fundamentally different"
+  - target: decision-language-rust
+    type: informed-by
+    note: "Subprocess protocol replaces Agent SDK integration"
 provenance:
   created_by: human
   session: session-008
   created_at: "2026-03-30"
+  updated_at: "2026-04-01"
+  updated_by: harvest-rust-rewrite

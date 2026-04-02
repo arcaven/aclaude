@@ -3,14 +3,23 @@ type: question
 confidence: frontier
 title: "Should themes/personas be bundled or loaded at runtime?"
 content: |
-  Currently 100 theme YAMLs embedded in binary via embed-themes.ts (~1.7MB).
-  Portraits already external (global cache). Agent subprocess (Claude Code)
-  cannot see embedded themes.
+  Currently 118 theme YAMLs embedded in binary via build.rs compile-time
+  code generation. Portraits already external (global cache). The agent
+  subprocess (Claude Code) cannot introspect embedded themes.
+
+  The Rust rewrite changed the mechanism (build.rs instead of
+  embed-themes.ts) but not the question. Themes are still compiled into
+  the binary. The trade-offs remain:
 
   Runtime loading: pack system (marvel), smaller binary, multi-console reuse.
   Bundling: zero-dependency, offline, version coherence.
   Hybrid: bundle minimal default, load additional from ~/.local/share/aclaude/
   or via marvel pack resolution.
+
+  New consideration post-rewrite: Rust's include_str!/include_bytes! and
+  build.rs code generation make embedding cheap and reliable (no virtual FS
+  friction like bun compile). This makes bundling more attractive than it
+  was in TypeScript.
 edges:
   - target: aae-orc::question-persona-pack
     type: derives
@@ -18,7 +27,12 @@ edges:
   - target: aae-orc::question-persona-model
     type: derives
     note: "Pack format depends on persona model"
+  - target: decision-language-rust
+    type: informed-by
+    note: "Rust embedding is more reliable than bun compile virtual FS"
 provenance:
   created_by: human
   session: session-008
   created_at: "2026-03-30"
+  updated_at: "2026-04-01"
+  updated_by: harvest-rust-rewrite

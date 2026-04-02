@@ -54,13 +54,7 @@ impl PortraitPaths {
 
 /// Global portrait cache directory.
 pub fn portrait_cache_dir() -> PathBuf {
-    let data_dir = env::var("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("~"))
-                .join(".local/share")
-        });
+    let data_dir = crate::paths::data_dir().unwrap_or_else(|| PathBuf::from("~/.local/share"));
     data_dir.join("aclaude/portraits")
 }
 

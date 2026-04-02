@@ -1,11 +1,7 @@
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
+ignore = []
 
 [licenses]
-unlicensed = "deny"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -18,9 +14,13 @@ allow = [
     "Zlib",
     "CC0-1.0",
     "OpenSSL",
-    "Ring",
+    "0BSD",
+    "BSL-1.0",
 ]
-confidence-threshold = 0.8
+
+[[licenses.exceptions]]
+allow = ["CDLA-Permissive-2.0"]
+name = "webpki-roots"
 
 [bans]
 multiple-versions = "warn"

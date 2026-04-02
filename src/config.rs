@@ -141,7 +141,7 @@ fn xdg_config_home() -> PathBuf {
     env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            dirs::home_dir()
+            crate::paths::home_dir()
                 .unwrap_or_else(|| PathBuf::from("~"))
                 .join(".config")
         })

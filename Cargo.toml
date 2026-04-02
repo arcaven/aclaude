@@ -22,9 +22,6 @@ toml = "0.8"
 anyhow = "1"
 thiserror = "2"
 
-# File system / paths
-dirs = "6"
-
 # Timestamps
 chrono = { version = "0.4", features = ["serde"] }
 

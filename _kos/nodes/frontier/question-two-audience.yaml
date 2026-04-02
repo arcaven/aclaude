@@ -6,13 +6,24 @@ content: |
   aclaude serves human operators (TUI, status bars, persona flair, markdown
   rendering) and autonomous agents under marvel (fast startup, minimal
   overhead, programmatic control, no visual decoration). These may not be
-  the same binary, language, or SDK. Optimizing for both risks the least
-  common denominator of features with the sum of the compromises.
+  the same binary or the same runtime mode.
 
-  The bundled-themes finding (agent can't introspect embedded data) is a
-  symptom — the subprocess boundary creates opacity that hurts the agent
-  use case while the persona system adds value for the human use case.
+  The Rust rewrite resolved the language question but not the audience
+  question. Rust gives both audiences a fast, portable binary. The question
+  is now about runtime behavior, not implementation stack:
+
+  - Should aclaude have a --headless or --agent flag that strips TUI,
+    persona flair, and interactive prompts?
+  - Should marvel's team manifests specify a runtime mode per role?
+  - Is this one binary with feature flags, or genuinely two binaries?
+
+  The subprocess protocol (NDJSON) is the same for both audiences. The
+  differentiation is in what wraps it: TUI + persona for humans, minimal
+  passthrough for agents.
 edges:
+  - target: decision-language-rust
+    type: informed-by
+    note: "Language resolved — audience question is now about runtime mode"
   - target: aae-orc::question-aclaude-ux-parity
     type: derives
     note: "Local form of orchestrator F13"
@@ -23,3 +34,5 @@ provenance:
   created_by: human
   session: session-008
   created_at: "2026-03-30"
+  updated_at: "2026-04-01"
+  updated_by: harvest-rust-rewrite
