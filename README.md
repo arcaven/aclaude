@@ -4,6 +4,8 @@ An opinionated [Claude Code](https://docs.anthropic.com/en/docs/claude-code) dis
 
 aclaude is an exploration of features useful in Claude Code-like programs when used with systems like [marvel](https://github.com/arcavenae/marvel) [switchboard](https://github.com/arcavenae/switchboard) [spectacle](https://github.com/arcavenae/spectacle) and an also an expression of preferences layered on top of the Claude Code foundation.
 
+**Rewritten in Rust** (2026-04-01) — eliminating all Node.js/npm dependencies following the [axios supply chain incident](docs/security/axios-supply-chain-2026-03-31.md). Single static binary, no runtime dependencies beyond the `claude` CLI itself.
+
 ## Install
 
 Requires: [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`claude`).
@@ -37,26 +39,57 @@ Config at `~/.config/aclaude/` is preserved by uninstall. Delete manually if unw
 ## Usage
 
 ```sh
-aclaude                          # start session with default persona
+aclaude                          # start interactive session with default persona
 aclaude -t dune -r dev           # start as Dune's dev character
 aclaude -m claude-opus-4-6       # override model
-aclaude persona list             # list 100 available themes
+aclaude -p "explain this code"   # one-shot prompt (non-interactive)
+aclaude persona list             # list available themes
 aclaude persona show dune        # show theme details
+aclaude persona show dune --portrait  # show with inline portrait (Kitty/Ghostty)
+aclaude persona portraits        # show portrait cache status
 aclaude config                   # show resolved configuration
-aclaude update                   # check for and install updates
+aclaude update                   # check for updates
+aclaude version                  # show version, commit, channel, build time
 ```
+
+### Passing arguments to Claude Code
+
+Arguments after `--` are forwarded directly to the `claude` CLI. This lets you use any Claude Code flag without aclaude needing to know about it:
+
+```sh
+aclaude -- --allowedTools Bash,Read --max-turns 5
+aclaude -p "fix the tests" -- --allowedTools Bash,Read,Edit
+aclaude -- --no-session-persistence --max-budget-usd 0.50
+aclaude -t dune -- --resume SESSION_ID
+```
+
+### Agent mode
+
+The `--streaming` flag uses the NDJSON subprocess protocol for programmatic use. This is the integration point for [marvel](https://github.com/arcavenae/marvel) and other orchestrators:
+
+```sh
+aclaude --streaming                          # structured JSON session
+aclaude --streaming -t the-expanse -r dev    # with persona
+aclaude --streaming -- --max-turns 10        # with claude flags
+```
+
+Streaming mode provides structured access to token usage, session cost, and tool invocations. It prints a usage summary on exit.
 
 ## What It Does
 
-- **Persona theming** — 100 theme rosters (Dune, West Wing, Hitchhiker's Guide, ...) with per-role characters, styles, and optional portrait images
-- **Configuration** — TOML config with 5-layer merge: defaults → global (`~/.config/aclaude/`) → local (`.aclaude/`) → env (`ACLAUDE_*`) → CLI flags
+- **Persona theming** — 118 theme rosters (Dune, West Wing, Hitchhiker's Guide, ...) with per-role characters, styles, and optional portrait images (Kitty/Ghostty inline display)
+- **Configuration** — TOML config with 5-layer merge: defaults -> global (`~/.config/aclaude/`) -> local (`.aclaude/`) -> env (`ACLAUDE_*`) -> CLI flags
+- **Claude Code passthrough** — any `claude` CLI flag works via `--` separator
+- **Three session modes** — interactive TUI (default), one-shot prompt (`-p`), streaming agent (`--streaming`)
 - **tmux integration** — session management, statusline with context window usage, git info
-- **Self-updating** — `aclaude update` fetches the latest release, rotates versions in `~/.local/share/aclaude/versions/`
+- **Self-updating** — `aclaude update` checks for the latest release via GitHub
 - **Dual-track distribution** — `aclaude` (stable, tagged releases) and `aclaude-a` (alpha, every push to main) can coexist
 
 ## How It Works
 
-aclaude invokes Claude Code as a subprocess via the [Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk). It does not fork, modify, or redistribute Claude Code. Your credentials, your session — aclaude adds configuration and personality on top.
+aclaude spawns the Claude Code CLI (`claude`) as a subprocess. It does not use the Node.js Agent SDK or any npm packages. aclaude does not fork, modify, or redistribute Claude Code. Your credentials, your session — aclaude adds configuration and personality on top.
+
+For interactive use, aclaude passes through to Claude Code's TUI with the persona system prompt injected via `--append-system-prompt`. For programmatic use (`--streaming`), aclaude uses the `claude` CLI's NDJSON streaming protocol to capture structured events (token usage, tool invocations, session metadata).
 
 ## Auth
 
@@ -84,6 +117,16 @@ context_bar = true
 
 Environment variables: `ACLAUDE_SESSION__MODEL=claude-opus-4-6`
 
+## Building from Source
+
+Requires Rust 1.85+.
+
+```sh
+just build          # cargo build
+just test           # cargo test
+just ci             # full CI check (fmt, clippy, deny, test)
+```
+
 ## Credits
 
 Portrait images by [slabgorb](https://github.com/slabgorb). Persona themes jointly developed by [slabgorb](https://github.com/slabgorb) and [arcaven](https://github.com/arcaven).
@@ -92,4 +135,4 @@ Portrait images by [slabgorb](https://github.com/slabgorb). Persona themes joint
 
 MIT. See [LICENSE](LICENSE).
 
-Claude Code and the Agent SDK are subject to Anthropic's [Commercial Terms of Service](https://www.anthropic.com/commercial-terms). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Claude Code is subject to Anthropic's [Commercial Terms of Service](https://www.anthropic.com/commercial-terms). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -1,0 +1,48 @@
+[package]
+name = "aclaude"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "Opinionated Claude Code distribution with persona theming"
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Config (TOML)
+toml = "0.8"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# File system / paths
+dirs = "6"
+
+# Timestamps
+chrono = { version = "0.4", features = ["serde"] }
+
+# HTTP (self-update via GitHub releases)
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+
+[build-dependencies]
+chrono = "0.4"
+
+[dev-dependencies]
+insta = { version = "1", features = ["yaml", "json"] }
+tempfile = "3"
+
+[lints.clippy]
+cloned_instead_of_copied = "warn"
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+uninlined_format_args = "deny"
+
+[lints.rust]
+unsafe_code = "forbid"

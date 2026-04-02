@@ -12,7 +12,6 @@ LAYOUT="${ACLAUDE_TMUX__LAYOUT:-bottom}"
 
 # Check dependencies
 command -v tmux >/dev/null 2>&1 || { echo "tmux is required but not installed."; exit 1; }
-command -v node >/dev/null 2>&1 || { echo "Node.js is required but not installed."; exit 1; }
 
 # Kill existing session on this socket if it exists
 if tmux -L "$SOCKET_NAME" has-session -t "$SESSION_NAME" 2>/dev/null; then

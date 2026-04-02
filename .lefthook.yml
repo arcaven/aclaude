@@ -1,0 +1,14 @@
+glob_matcher: doublestar
+
+# Pre-commit: fast feedback only. Full suite is `just ci`.
+# Keep fmt (instant) + clippy (compiles + lints in one pass).
+pre-commit:
+  parallel: true
+  commands:
+    fmt-check:
+      glob: "**/*.rs"
+      run: export PATH="$HOME/.cargo/bin:$PATH"; cargo +nightly fmt --all -- --check
+
+    clippy:
+      glob: "**/*.rs"
+      run: test -f "$HOME/.cargo/env" && . "$HOME/.cargo/env"; cargo clippy --all-targets --all-features -- -D warnings

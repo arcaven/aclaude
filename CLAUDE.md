@@ -1,66 +1,82 @@
 # aclaude
 
-BOYC (Bring Your Own Claude) agent orchestration platform. Phase 1: standalone single-agent CLI.
+Opinionated Claude Code distribution with persona theming. Wraps the `claude`
+CLI as a subprocess using the NDJSON streaming protocol.
+
+Rewritten from TypeScript to Rust (2026-04-01) following the axios npm supply
+chain incident. See `docs/security/axios-supply-chain-2026-03-31.md`.
 
 ## Build / Run / Test
 
-Requires: Node.js 20+, `just`, `tmux` (optional, for sessions).
+Requires: Rust 1.85+ (Edition 2024), `just`, `tmux` (optional, for sessions).
 
 ```sh
-just build          # compile TypeScript
-just dev            # run CLI in dev mode (tsx)
-just dev config     # show resolved config
-just dev persona list
-just dev persona show <name>
-just test           # run vitest
-just lint           # eslint
+just build          # cargo build
+just dev            # cargo run (with args)
+just test           # cargo test
+just lint           # fmt + clippy + deny (pre-commit mirror)
+just ci             # full CI mirror
+just fmt            # cargo +nightly fmt --all
 just start          # launch tmux session
 ```
 
 ## Architecture
 
 ```
-cli/          TypeScript CLI (commander + Claude Agent SDK + Anthropic SDK)
-tmux/         tmux launcher + layout configs
-personas/     theme YAMLs (character data, language-agnostic)
-config/       reference configs (defaults.toml, example.toml)
-docs/         architecture docs + research notes
+src/
+  main.rs             CLI entry point (clap)
+  lib.rs              Public API re-exports
+  error.rs            AclaudeError enum
+  config.rs           TOML config: 5-layer merge
+  persona.rs          Theme loading (embedded), system prompt building
+  session.rs          Claude CLI subprocess management
+  hooks.rs            Tool usage tracking, audit trail
+  statusline.rs       Tmux status bar rendering
+  updater.rs          Self-update via GitHub releases
+
+personas/themes/     118 YAML theme files (embedded at compile time via build.rs)
+config/              TOML config defaults and examples
+tmux/                Session launcher
+docs/                Architecture docs, research, security notes
 ```
 
-### Dual SDK Design
+### Claude Code Integration
 
-- **`@anthropic-ai/claude-agent-sdk`** — session runner. Spawns Claude Code as subprocess, inherits its auth (OAuth, API key, Bedrock, Vertex). Handles the agent loop, tool execution, streaming.
-- **`@anthropic-ai/sdk`** — raw API access. Per-turn token usage from `SDKAssistantMessage.message.usage`, model listing, direct API calls when needed.
-- **Hooks** (`cli/src/hooks.ts`) — in-process JS callbacks wired into agent SDK's `options.hooks`. Tracks tool usage, session lifecycle, audit trail. Replaces pennyfarthing's shell-based hooks.
+aclaude spawns `claude` as a child process. No SDK dependency — the NDJSON
+subprocess protocol is the stable contract. For interactive sessions:
 
-See `docs/research/cc-vs-sdk-20260316.md` for the full comparison.
+```
+claude --model <model> --append-system-prompt "<persona prompt>"
+```
+
+For programmatic use (one-shot):
+
+```
+claude -p "prompt" --model <model> --output-format json --append-system-prompt "<persona>"
+```
+
+### Theme Embedding
+
+`build.rs` reads all `personas/themes/*.yaml` at compile time and generates
+a Rust source file with embedded theme content. Themes are available at
+runtime without filesystem access — the binary is self-contained.
+
+@.claude/rules/_index.md
 
 ## Conventions
 
-- **Config format:** TOML. Merge order: defaults → global (~/.config/aclaude/) → local (.aclaude/) → env (ACLAUDE_*) → CLI flags.
-- **Auth:** Delegates to Claude Code via Agent SDK. Users authenticate with their own Anthropic API key, AWS Bedrock, or Google Cloud Vertex AI credentials. aclaude does not store, manage, or proxy authentication. See THIRD_PARTY_NOTICES.md for details.
+- **Language:** Rust. Entire codebase.
+- **Config format:** TOML. Merge order: defaults -> global (~/.config/aclaude/) -> local (.aclaude/) -> env (ACLAUDE_*) -> CLI flags.
+- **Auth:** Delegates to Claude Code. Users authenticate with their own credentials. aclaude does not store, manage, or proxy authentication.
 - **No file deletion:** Never delete user files. Overwrite only with explicit intent.
 - **Parallel-safe:** Each session gets a UUID. No shared mutable state between sessions.
-- **Dependencies:** Keep minimal. No frameworks beyond commander for CLI parsing.
-
-## Config
-
-TOML files in `config/`. See `config/example.toml` for all options.
-
-Environment variables use `ACLAUDE_` prefix with double-underscore for nesting:
-- `ACLAUDE_SESSION__MODEL=claude-opus-4-6`
-- `ACLAUDE_PERSONA__THEME=dune`
-
-## Personas
-
-Theme YAMLs live in `personas/themes/`. Each theme has a roster of characters keyed by role (dev, sm, tea, reviewer, etc.). The `persona.role` config key selects which character to use.
 
 ## Values
 
-- **Portability:** Runs anywhere Node.js runs. No platform-specific deps.
+- **Portability:** Single static binary. No runtime dependencies.
 - **Composability:** CLI subcommands, tmux integration, OTEL — all optional layers.
 - **User sovereignty:** All config is local. No phone-home. Telemetry is opt-in and self-hosted.
-- **Easy install:** `npm install` and go. No build toolchain beyond TypeScript.
+- **Supply chain safety:** No npm/node ecosystem. Rust dependencies audited via cargo-deny.
 
 ## How to Work Here (kos Process)
 

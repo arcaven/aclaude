@@ -7,56 +7,68 @@ on:
   push:
     tags: ["v*"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
 env:
-  BUN_VERSION: "1.3"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
 
 jobs:
-  test:
-    name: Lint & Test
+  check:
+    name: Check
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v6
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: cd cli && bun install
-      - name: Generate version file
-        run: bun run cli/scripts/gen-version.ts
-      - run: cd cli && bun run lint
-      - run: cd cli && bun run test
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-targets
 
   build:
-    name: Build (${{ matrix.os }}-${{ matrix.arch }})
-    needs: test
+    name: Build (${{ matrix.target }})
+    needs: check
     strategy:
       matrix:
         include:
-          - os: darwin
-            arch: arm64
-            runner: macos-latest
-          # darwin-amd64 skipped: macOS Intel runners deprecated,
-          # arm64 binaries run on Intel via Rosetta 2
-          - os: linux
-            arch: amd64
-            runner: ubuntu-latest
-          - os: linux
-            arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact_name: aclaude-darwin-arm64
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact_name: aclaude-linux-amd64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            artifact_name: aclaude-linux-arm64
+    runs-on: ${{ matrix.os }}
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v6
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          fetch-depth: 1
 
-      - name: Install dependencies
-        run: cd cli && bun install
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
 
       - name: Extract version
         id: version
@@ -65,29 +77,22 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Embed themes
-        run: bun run cli/scripts/embed-themes.ts
-
-      - name: Generate version
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          bun run cli/scripts/gen-version.ts --channel stable --tag "$TAG"
-
       - name: Build binary
+        env:
+          ACLAUDE_CHANNEL: stable
+          ACLAUDE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          cd cli
-          bun build --compile src/index.ts --outfile aclaude-${{ matrix.os }}-${{ matrix.arch }}
+          cargo build --release --target ${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/aclaude ${{ matrix.artifact_name }}
 
       - name: Verify binary
-        run: |
-          cd cli
-          ./aclaude-${{ matrix.os }}-${{ matrix.arch }} --version
+        run: ./${{ matrix.artifact_name }} --version
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.os }}-${{ matrix.arch }}
-          path: cli/aclaude-${{ matrix.os }}-${{ matrix.arch }}
+          name: binaries-${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}
 
   sign-and-notarize:
     name: Sign & Notarize
@@ -99,12 +104,12 @@ jobs:
         arch: [arm64]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download binaries
         uses: actions/download-artifact@v4
         with:
-          name: binaries-darwin-${{ matrix.arch }}
+          name: binaries-aclaude-darwin-${{ matrix.arch }}
 
       - name: Import certificates
         env:
@@ -174,7 +179,6 @@ jobs:
             security find-identity -v build.keychain
             exit 1
           fi
-
           VERSION="${{ needs.build.outputs.version }}"
           chmod +x scripts/create-pkg.sh
           ./scripts/create-pkg.sh aclaude-darwin-${{ matrix.arch }} "$VERSION" "$APPLE_INSTALLER_IDENTITY" aclaude-${{ matrix.arch }}.pkg
@@ -222,19 +226,19 @@ jobs:
       - name: Download macOS arm64
         uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.sign-and-notarize.result == 'success' && 'signed-binaries-darwin-arm64' || 'binaries-darwin-arm64' }}
+          name: ${{ needs.sign-and-notarize.result == 'success' && 'signed-binaries-darwin-arm64' || 'binaries-aclaude-darwin-arm64' }}
           path: dist/
 
       - name: Download Linux amd64
         uses: actions/download-artifact@v4
         with:
-          name: binaries-linux-amd64
+          name: binaries-aclaude-linux-amd64
           path: dist/
 
       - name: Download Linux arm64
         uses: actions/download-artifact@v4
         with:
-          name: binaries-linux-arm64
+          name: binaries-aclaude-linux-arm64
           path: dist/
 
       - name: List release files
@@ -259,7 +263,7 @@ jobs:
     environment: release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download signed darwin binaries
         uses: actions/download-artifact@v4
