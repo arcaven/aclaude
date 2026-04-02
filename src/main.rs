@@ -4,6 +4,7 @@ use aclaude::config;
 use aclaude::persona;
 use aclaude::portrait;
 use aclaude::session;
+use aclaude::session_cmd;
 use aclaude::updater;
 use clap::{Parser, Subcommand};
 
@@ -63,6 +64,12 @@ enum Commands {
         action: PersonaAction,
     },
 
+    /// Manage the aclaude tmux session
+    Session {
+        #[command(subcommand)]
+        action: SessionAction,
+    },
+
     /// Check for and install updates
     Update,
 
@@ -74,6 +81,31 @@ enum Commands {
         /// Clean old versions, keeping N most recent
         #[arg(long)]
         clean: Option<usize>,
+    },
+}
+
+#[derive(Subcommand)]
+enum SessionAction {
+    /// Start the aclaude tmux session (replaces tmux/start-session.sh)
+    Start {
+        /// tmux socket name override
+        #[arg(long)]
+        socket: Option<String>,
+        /// Attach terminal to the session after starting
+        #[arg(long, default_value_t = true)]
+        attach: bool,
+    },
+    /// Attach to an existing aclaude session
+    Attach {
+        /// tmux socket name override
+        #[arg(long)]
+        socket: Option<String>,
+    },
+    /// Stop (kill) the aclaude session
+    Stop {
+        /// tmux socket name override
+        #[arg(long)]
+        socket: Option<String>,
     },
 }
 
@@ -264,6 +296,21 @@ fn main() -> anyhow::Result<()> {
                 println!("Total images: {images}");
             }
         },
+
+        Some(Commands::Session { action }) => {
+            let cfg = config::load_config(cli_overrides)?;
+            match action {
+                SessionAction::Start { socket, attach } => {
+                    session_cmd::run_session_start(&cfg, socket.as_deref(), attach)?;
+                }
+                SessionAction::Attach { socket } => {
+                    session_cmd::run_session_attach(&cfg, socket.as_deref())?;
+                }
+                SessionAction::Stop { socket } => {
+                    session_cmd::run_session_stop(&cfg, socket.as_deref())?;
+                }
+            }
+        }
 
         Some(Commands::Update) => {
             let channel = updater::Channel::parse(CHANNEL);

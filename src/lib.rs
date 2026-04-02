@@ -5,5 +5,6 @@ pub mod persona;
 pub mod portrait;
 pub mod protocol;
 pub mod session;
+pub mod session_cmd;
 pub mod statusline;
 pub mod updater;

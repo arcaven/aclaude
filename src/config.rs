@@ -69,6 +69,8 @@ pub struct TmuxConfig {
     pub layout: String,
     #[serde(default = "default_socket")]
     pub socket: String,
+    #[serde(default = "default_status_interval")]
+    pub status_interval: u32,
 }
 
 fn default_layout() -> String {
@@ -76,6 +78,9 @@ fn default_layout() -> String {
 }
 fn default_socket() -> String {
     "ac".to_string()
+}
+fn default_status_interval() -> u32 {
+    2
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -126,6 +131,7 @@ impl Default for TmuxConfig {
         Self {
             layout: default_layout(),
             socket: default_socket(),
+            status_interval: default_status_interval(),
         }
     }
 }

@@ -18,3 +18,4 @@
 
 # tmux status cache
 .aclaude/tmux-status-*
+.aclaude/

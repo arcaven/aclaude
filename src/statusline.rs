@@ -126,7 +126,25 @@ pub fn render_statusline(
     parts.join(&format!(" {}|{} ", ansi::DIM, ansi::RESET))
 }
 
-/// Write tmux status cache files for polling.
+/// Push statusline content to tmux via control mode if a client is available,
+/// otherwise fall back to writing cache files.
+pub fn push_statusline(
+    left: &str,
+    right: &str,
+    client: Option<&tmux_cmc::Client>,
+    session: Option<&tmux_cmc::SessionId>,
+) {
+    if let (Some(client), Some(session)) = (client, session) {
+        // Real-time push via control mode — no polling delay
+        let _ = client.set_status_left(session, left);
+        let _ = client.set_status_right(session, right);
+    } else {
+        // Fallback: write cache files for tmux to poll
+        write_tmux_cache(left, right);
+    }
+}
+
+/// Write tmux status cache files for polling (legacy fallback).
 pub fn write_tmux_cache(left: &str, right: &str) {
     let cache_dir = Path::new(".aclaude");
     let _ = fs::create_dir_all(cache_dir);
