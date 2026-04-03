@@ -1267,6 +1267,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 [[package]]
 name = "tmux-cmc"
 version = "0.1.0"
+source = "git+https://github.com/ArcavenAE/tmux-cmc?branch=main#9d570a749d6d0341a1cd43591c9486ca453ead90"
 dependencies = [
  "oneshot",
  "thiserror",
