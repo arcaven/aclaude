@@ -313,17 +313,50 @@ fn main() -> anyhow::Result<()> {
 
         Some(Commands::Update) => {
             let channel = updater::Channel::parse(CHANNEL);
-            println!(
-                "Checking for updates ({})...",
-                if channel == updater::Channel::Stable {
-                    "stable"
-                } else {
-                    "alpha"
+            let channel_label = if channel == updater::Channel::Stable {
+                "stable"
+            } else {
+                "alpha"
+            };
+
+            // Check how aclaude was installed
+            match updater::detect_install_method()? {
+                updater::InstallMethod::Homebrew => {
+                    println!("aclaude was installed via Homebrew.");
+                    println!("Run: brew upgrade aclaude-a");
+                    return Ok(());
                 }
-            );
+                updater::InstallMethod::LinuxPackageManager { manager } => {
+                    println!("aclaude was installed via {manager}.");
+                    println!(
+                        "Update using your package manager (e.g. sudo {manager} upgrade aclaude-a)."
+                    );
+                    return Ok(());
+                }
+                updater::InstallMethod::DirectBinary => {}
+            }
+
+            println!("Checking for updates ({channel_label})...");
             match updater::check_for_update(channel)? {
-                Some(tag) => println!("Latest: {tag} (current: {VERSION}-{COMMIT})"),
-                None => println!("No updates available."),
+                Some(tag) => {
+                    println!("Latest: {tag} (current: {VERSION}-{COMMIT})");
+
+                    // Check if we already have this version (strip leading 'v' for comparison)
+                    let latest_version = tag.strip_prefix('v').unwrap_or(&tag);
+                    if latest_version == VERSION {
+                        println!("Already up to date.");
+                        return Ok(());
+                    }
+
+                    println!("Downloading and installing {tag}...");
+                    let installed_tag = updater::download_and_install(channel)?;
+                    println!(
+                        "Updated aclaude: {VERSION} -> {}",
+                        installed_tag.strip_prefix('v').unwrap_or(&installed_tag)
+                    );
+                    println!("Restart aclaude to use the new version.");
+                }
+                None => println!("No {channel_label} releases found."),
             }
         }
 
