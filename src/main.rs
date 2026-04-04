@@ -13,11 +13,10 @@ const VERSION: &str = env!("ACLAUDE_VERSION");
 const COMMIT: &str = env!("ACLAUDE_COMMIT");
 const BUILD_TIME: &str = env!("ACLAUDE_BUILD_TIME");
 const CHANNEL: &str = env!("ACLAUDE_CHANNEL");
-
 #[derive(Parser)]
 #[command(
     name = "aclaude",
-    version = VERSION,
+    version = env!("ACLAUDE_LONG_VERSION"),
     about = "Opinionated Claude Code distribution with persona theming"
 )]
 struct Cli {
