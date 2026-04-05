@@ -192,8 +192,10 @@ pub fn check_for_update(channel: Channel) -> Result<Option<String>> {
     let latest = releases
         .iter()
         .filter(|r| match channel {
-            Channel::Stable => !r.prerelease,
-            Channel::Alpha => r.prerelease,
+            // Stable: non-prerelease (tagged v*) OR stable-* pre-releases
+            Channel::Stable => !r.prerelease || r.tag_name.starts_with("stable-"),
+            // Alpha: only alpha-* pre-releases
+            Channel::Alpha => r.prerelease && r.tag_name.starts_with("alpha-"),
         })
         .max_by_key(|r| &r.published_at);
 
@@ -221,8 +223,8 @@ pub fn download_and_install(channel: Channel) -> Result<String> {
     let release = releases
         .iter()
         .filter(|r| match channel {
-            Channel::Stable => !r.prerelease,
-            Channel::Alpha => r.prerelease,
+            Channel::Stable => !r.prerelease || r.tag_name.starts_with("stable-"),
+            Channel::Alpha => r.prerelease && r.tag_name.starts_with("alpha-"),
         })
         .max_by_key(|r| &r.published_at)
         .ok_or_else(|| AclaudeError::Update {
