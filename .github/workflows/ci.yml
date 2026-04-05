@@ -1,11 +1,14 @@
-# CI + Alpha Release
-# Triggers: push to develop (alpha releases), pull requests to develop or main
-# Builds binaries for all platforms, signs/notarizes, creates pre-release, updates homebrew-tap
+# CI — Checks, Build, Sign, Release
+#
+# Branch-aware: same workflow on develop and main.
+#   develop → alpha channel (aclaude-a), alpha pre-release
+#   main    → stable channel (aclaude), stable pre-release
+# Tagged releases (v*) are handled by release.yml.
 name: CI
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, main]
     paths-ignore:
       - '*.md'
       - 'docs/**'
@@ -32,6 +35,37 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # ── Branch config ─────────────────────────────────────────────────────
+  # Derive channel-specific values from the branch name.
+  # All downstream jobs reference these outputs.
+  config:
+    name: Config
+    runs-on: ubuntu-latest
+    outputs:
+      is_alpha: ${{ steps.cfg.outputs.is_alpha }}
+      channel: ${{ steps.cfg.outputs.channel }}
+      binary_prefix: ${{ steps.cfg.outputs.binary_prefix }}
+      tag_prefix: ${{ steps.cfg.outputs.tag_prefix }}
+      release_title: ${{ steps.cfg.outputs.release_title }}
+    steps:
+      - name: Set config from branch
+        id: cfg
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "is_alpha=true" >> "$GITHUB_OUTPUT"
+            echo "channel=alpha" >> "$GITHUB_OUTPUT"
+            echo "binary_prefix=aclaude-a" >> "$GITHUB_OUTPUT"
+            echo "tag_prefix=alpha" >> "$GITHUB_OUTPUT"
+            echo "release_title=Alpha" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_alpha=false" >> "$GITHUB_OUTPUT"
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+            echo "binary_prefix=aclaude" >> "$GITHUB_OUTPUT"
+            echo "tag_prefix=stable" >> "$GITHUB_OUTPUT"
+            echo "release_title=Stable" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Checks ────────────────────────────────────────────────────────────
   check-fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
@@ -98,10 +132,11 @@ jobs:
         with:
           command: check advisories licenses bans
 
+  # ── Build ─────────────────────────────────────────────────────────────
   build:
     name: Build (${{ matrix.target }})
-    needs: [check-fmt, check-clippy, test, deny]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: [config, check-fmt, check-clippy, test, deny]
+    if: github.event_name == 'push'
     strategy:
       matrix:
         include:
@@ -137,31 +172,35 @@ jobs:
         id: version
         run: |
           VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          TAG="alpha-$(date -u +%Y%m%d-%H%M%S)-$(echo ${{ github.sha }} | head -c 7)"
+          TAG="${{ needs.config.outputs.tag_prefix }}-$(date -u +%Y%m%d-%H%M%S)-$(echo ${{ github.sha }} | head -c 7)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Build alpha binary
+      - name: Build binary
         env:
-          ACLAUDE_CHANNEL: alpha
+          ACLAUDE_CHANNEL: ${{ needs.config.outputs.channel }}
           ACLAUDE_TAG: ${{ steps.version.outputs.tag }}
         run: |
           cargo build --release --target ${{ matrix.target }}
-          cp target/${{ matrix.target }}/release/aclaude $(echo "${{ matrix.artifact_name }}" | sed 's/aclaude/aclaude-a/')
+          # Derive the output binary name from the artifact name and binary prefix
+          OUTPUT=$(echo "${{ matrix.artifact_name }}" | sed "s/aclaude/${{ needs.config.outputs.binary_prefix }}/")
+          cp target/${{ matrix.target }}/release/aclaude "$OUTPUT"
 
       - name: Verify binary
         run: |
-          ./$(echo "${{ matrix.artifact_name }}" | sed 's/aclaude/aclaude-a/') --version
+          OUTPUT=$(echo "${{ matrix.artifact_name }}" | sed "s/aclaude/${{ needs.config.outputs.binary_prefix }}/")
+          ./"$OUTPUT" --version
 
       - name: Upload artifacts
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: binaries-${{ matrix.artifact_name }}
-          path: aclaude-a-*
+          path: ${{ needs.config.outputs.binary_prefix }}-*
 
+  # ── Sign & Notarize ───────────────────────────────────────────────────
   sign-and-notarize:
     name: Sign & Notarize
-    needs: build
+    needs: [config, build]
     if: vars.SIGNING_ENABLED == 'true'
     permissions:
       contents: write
@@ -208,20 +247,21 @@ jobs:
       - name: Sign binary
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          BINARY: ${{ needs.config.outputs.binary_prefix }}-darwin-${{ matrix.arch }}
         run: |
           codesign --force --options runtime \
             --sign "$APPLE_SIGNING_IDENTITY" \
             --timestamp \
-            aclaude-a-darwin-${{ matrix.arch }}
+            "$BINARY"
 
       - name: Verify signature
-        run: codesign --verify --deep --strict aclaude-a-darwin-${{ matrix.arch }}
+        run: codesign --verify --deep --strict ${{ needs.config.outputs.binary_prefix }}-darwin-${{ matrix.arch }}
 
       - name: Build app bundle
         run: |
           VERSION="${{ needs.build.outputs.version }}"
           chmod +x scripts/create-app.sh
-          ./scripts/create-app.sh aclaude-a-darwin-${{ matrix.arch }} "$VERSION" .
+          ./scripts/create-app.sh ${{ needs.config.outputs.binary_prefix }}-darwin-${{ matrix.arch }} "$VERSION" .
           mv Aclaude.app Aclaude-${{ matrix.arch }}.app
 
       - name: Sign app bundle
@@ -250,7 +290,7 @@ jobs:
           fi
           VERSION="${{ needs.build.outputs.version }}"
           chmod +x scripts/create-pkg.sh
-          ./scripts/create-pkg.sh aclaude-a-darwin-${{ matrix.arch }} "$VERSION" "$APPLE_INSTALLER_IDENTITY" aclaude-${{ matrix.arch }}.pkg
+          ./scripts/create-pkg.sh ${{ needs.config.outputs.binary_prefix }}-darwin-${{ matrix.arch }} "$VERSION" "$APPLE_INSTALLER_IDENTITY" aclaude-${{ matrix.arch }}.pkg
 
       - name: Notarize and staple
         env:
@@ -273,7 +313,7 @@ jobs:
         with:
           name: signed-binaries-darwin-${{ matrix.arch }}
           path: |
-            aclaude-a-darwin-${{ matrix.arch }}
+            ${{ needs.config.outputs.binary_prefix }}-darwin-${{ matrix.arch }}
             aclaude-${{ matrix.arch }}.pkg
             aclaude-${{ matrix.arch }}.dmg
           retention-days: 14
@@ -282,9 +322,10 @@ jobs:
         if: always()
         run: security delete-keychain build.keychain || true
 
-  alpha-release:
-    name: Create Alpha Release
-    needs: [build, sign-and-notarize]
+  # ── Release ───────────────────────────────────────────────────────────
+  create-release:
+    name: Create ${{ needs.config.outputs.release_title }} Release
+    needs: [config, build, sign-and-notarize]
     if: |
       always() &&
       needs.build.result == 'success' &&
@@ -320,27 +361,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ needs.build.outputs.tag }}"
+          TITLE="${{ needs.config.outputs.release_title }}"
+          PREFIX="${{ needs.config.outputs.binary_prefix }}"
           gh release create "$TAG" \
             --repo "${{ github.repository }}" \
             --prerelease \
-            --title "Alpha: $TAG" \
+            --title "$TITLE: $TAG" \
             --notes "$(cat <<NOTES
-          Automated alpha release from develop.
+          Automated $TITLE release.
 
           **Version:** ${{ needs.build.outputs.version }}
           **Commit:** ${{ github.sha }}
+          **Branch:** ${{ github.ref_name }}
           **Built with:** Rust (cargo)
           **Signed:** ${{ needs.sign-and-notarize.result == 'success' && 'Yes (Apple Developer ID)' || 'No (unsigned)' }}
 
           **Binaries:**
-          - \`aclaude-a-darwin-arm64\` — macOS Apple Silicon
-          - \`aclaude-a-linux-amd64\` — Linux x86_64
-          - \`aclaude-a-linux-arm64\` — Linux ARM64
+          - \`${PREFIX}-darwin-arm64\` — macOS Apple Silicon
+          - \`${PREFIX}-linux-amd64\` — Linux x86_64
+          - \`${PREFIX}-linux-arm64\` — Linux ARM64
           NOTES
           )" \
             dist/*
 
-      - name: Clean old alpha releases (keep 30)
+      - name: Clean old pre-releases (keep 30)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -348,14 +392,15 @@ jobs:
             --json tagName,isPrerelease \
             --jq '[.[] | select(.isPrerelease)] | sort_by(.tagName) | reverse | .[30:] | .[].tagName' \
           | while read -r tag; do
-              echo "Deleting old alpha release: $tag"
+              echo "Deleting old pre-release: $tag"
               gh release delete "$tag" --repo "${{ github.repository }}" --yes --cleanup-tag
             done
 
+  # ── Homebrew (alpha only) ─────────────────────────────────────────────
   update-homebrew:
-    name: Update Homebrew Tap (Alpha)
-    needs: [build, sign-and-notarize, alpha-release]
-    if: needs.alpha-release.result == 'success' && needs.sign-and-notarize.result == 'success'
+    name: Update Homebrew Tap
+    needs: [config, build, sign-and-notarize, create-release]
+    if: needs.create-release.result == 'success' && needs.sign-and-notarize.result == 'success' && needs.config.outputs.is_alpha == 'true'
     permissions:
       contents: write
     environment: release
