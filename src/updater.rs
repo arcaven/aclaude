@@ -48,6 +48,14 @@ impl Channel {
     }
 }
 
+/// Return the binary name the user invoked (e.g. "aclaude-a" or "aclaude").
+pub fn binary_name() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "aclaude".to_string())
+}
+
 /// How aclaude was installed — determines update strategy.
 #[derive(Debug, PartialEq, Eq)]
 pub enum InstallMethod {
@@ -174,42 +182,18 @@ fn asset_name() -> Result<String> {
     Ok(format!("{base}-{os}-{arch}"))
 }
 
-/// Check for available updates on GitHub.
-pub fn check_for_update(channel: Channel) -> Result<Option<String>> {
-    let client = http_client()?;
-
-    let releases: Vec<GitHubRelease> = client
-        .get("https://api.github.com/repos/ArcavenAE/aclaude/releases")
-        .send()
-        .map_err(|e| AclaudeError::Update {
-            message: format!("failed to fetch releases: {e}"),
-        })?
-        .json()
-        .map_err(|e| AclaudeError::Update {
-            message: format!("failed to parse releases: {e}"),
-        })?;
-
-    let latest = releases
-        .iter()
-        .filter(|r| match channel {
-            // Stable: non-prerelease (tagged v*) OR stable-* pre-releases
-            Channel::Stable => !r.prerelease || r.tag_name.starts_with("stable-"),
-            // Alpha: only alpha-* pre-releases
-            Channel::Alpha => r.prerelease && r.tag_name.starts_with("alpha-"),
-        })
-        .max_by_key(|r| &r.published_at);
-
-    Ok(latest.map(|r| r.tag_name.clone()))
+/// Tag prefix for the given channel.
+fn channel_tag_prefix(channel: Channel) -> &'static str {
+    match channel {
+        Channel::Stable => "stable-",
+        Channel::Alpha => "alpha-",
+    }
 }
 
-/// Download and install the latest release, replacing the current binary.
-///
-/// Returns the new version tag on success.
-pub fn download_and_install(channel: Channel) -> Result<String> {
+/// Fetch releases from the GitHub API.
+fn fetch_releases() -> Result<Vec<GitHubRelease>> {
     let client = http_client()?;
-
-    // Fetch releases
-    let releases: Vec<GitHubRelease> = client
+    client
         .get("https://api.github.com/repos/ArcavenAE/aclaude/releases")
         .send()
         .map_err(|e| AclaudeError::Update {
@@ -218,25 +202,92 @@ pub fn download_and_install(channel: Channel) -> Result<String> {
         .json()
         .map_err(|e| AclaudeError::Update {
             message: format!("failed to parse releases: {e}"),
-        })?;
-
-    let release = releases
-        .iter()
-        .filter(|r| match channel {
-            Channel::Stable => !r.prerelease || r.tag_name.starts_with("stable-"),
-            Channel::Alpha => r.prerelease && r.tag_name.starts_with("alpha-"),
         })
-        .max_by_key(|r| &r.published_at)
-        .ok_or_else(|| AclaudeError::Update {
-            message: format!(
-                "no {} releases found",
-                if channel == Channel::Stable {
-                    "stable"
-                } else {
-                    "alpha"
-                }
-            ),
-        })?;
+}
+
+/// Find a release matching the given criteria.
+///
+/// If `target_version` is `None`, returns the latest release for the channel.
+/// If `target_version` is `Some(v)`, finds the release whose tag matches `v`
+/// (exact match first, then partial/contains match, picking latest if ambiguous).
+fn find_release<'a>(
+    releases: &'a [GitHubRelease],
+    channel: Channel,
+    target_version: Option<&str>,
+) -> Result<&'a GitHubRelease> {
+    let prefix = channel_tag_prefix(channel);
+    let channel_releases: Vec<&GitHubRelease> = releases
+        .iter()
+        .filter(|r| r.tag_name.starts_with(prefix) || (channel == Channel::Stable && !r.prerelease))
+        .collect();
+
+    if channel_releases.is_empty() {
+        return Err(AclaudeError::Update {
+            message: format!("no {channel:?} releases found"),
+        });
+    }
+
+    match target_version {
+        None => channel_releases
+            .into_iter()
+            .max_by_key(|r| r.published_at.clone())
+            .ok_or_else(|| AclaudeError::Update {
+                message: "no releases found".to_string(),
+            }),
+        Some(version) => {
+            // Exact match first
+            if let Some(release) = channel_releases.iter().find(|r| r.tag_name == version) {
+                return Ok(release);
+            }
+            // Partial match
+            let matches: Vec<&&GitHubRelease> = channel_releases
+                .iter()
+                .filter(|r| r.tag_name.starts_with(version) || r.tag_name.contains(version))
+                .collect();
+            match matches.len() {
+                0 => Err(AclaudeError::Update {
+                    message: format!(
+                        "no release matching '{version}'. Available: {}",
+                        channel_releases
+                            .iter()
+                            .map(|r| r.tag_name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                }),
+                _ => matches
+                    .into_iter()
+                    .max_by_key(|r| r.published_at.clone())
+                    .copied()
+                    .ok_or_else(|| AclaudeError::Update {
+                        message: "no releases found".to_string(),
+                    }),
+            }
+        }
+    }
+}
+
+/// Check for available updates on GitHub.
+///
+/// If `target_version` is None, finds the latest release for the channel.
+/// If specified, finds the matching release (for upgrade or downgrade).
+pub fn check_for_update(channel: Channel, target_version: Option<&str>) -> Result<Option<String>> {
+    let releases = fetch_releases()?;
+    match find_release(&releases, channel, target_version) {
+        Ok(release) => Ok(Some(release.tag_name.clone())),
+        Err(_) => Ok(None),
+    }
+}
+
+/// Download and install a release, replacing the current binary.
+///
+/// If `target_version` is None, installs the latest release.
+/// If specified, installs the matching release (upgrade or downgrade).
+///
+/// Returns the new version tag on success.
+pub fn download_and_install(channel: Channel, target_version: Option<&str>) -> Result<String> {
+    let releases = fetch_releases()?;
+    let release = find_release(&releases, channel, target_version)?;
 
     // Find the right asset for this platform
     let expected_asset = asset_name()?;
@@ -298,7 +349,8 @@ pub fn download_and_install(channel: Channel) -> Result<String> {
             .unwrap_or_else(|| "aclaude".into())
     ));
 
-    // Download the asset to a temp file
+    // Download the asset
+    let client = http_client()?;
     println!("Downloading {}...", asset.name);
     let response = client
         .get(&asset.browser_download_url)

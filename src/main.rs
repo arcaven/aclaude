@@ -73,8 +73,11 @@ enum Commands {
         action: SessionAction,
     },
 
-    /// Check for and install updates
-    Update,
+    /// Update to the latest release, or to a specific version
+    Update {
+        /// Target version tag (e.g., alpha-20260405-075244-abc1234). Omit for latest.
+        version: Option<String>,
+    },
 
     /// Show version details
     Version,
@@ -364,7 +367,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
-        Some(Commands::Update) => {
+        Some(Commands::Update { version }) => {
             let channel = updater::Channel::parse(CHANNEL);
             let channel_label = if channel == updater::Channel::Stable {
                 "stable"
@@ -373,43 +376,52 @@ fn main() -> anyhow::Result<()> {
             };
 
             // Check how aclaude was installed
+            let bin = updater::binary_name();
             match updater::detect_install_method()? {
                 updater::InstallMethod::Homebrew => {
+                    let formula = if bin.starts_with("aclaude-a") {
+                        "ArcavenAE/tap/aclaude-a"
+                    } else {
+                        "ArcavenAE/tap/aclaude"
+                    };
                     println!("aclaude was installed via Homebrew.");
-                    println!("Run: brew upgrade aclaude-a");
+                    println!("Run: brew upgrade {formula}");
                     return Ok(());
                 }
                 updater::InstallMethod::LinuxPackageManager { manager } => {
                     println!("aclaude was installed via {manager}.");
-                    println!(
-                        "Update using your package manager (e.g. sudo {manager} upgrade aclaude-a)."
-                    );
+                    println!("Update using your package manager.");
                     return Ok(());
                 }
                 updater::InstallMethod::DirectBinary => {}
             }
 
+            let current_tag = env!("ACLAUDE_TAG");
+            let target = version.as_deref();
+
             println!("Checking for updates ({channel_label})...");
-            match updater::check_for_update(channel)? {
-                Some(tag) => {
-                    println!("Latest: {tag} (current: {VERSION}-{COMMIT})");
-
-                    // Check if we already have this version (strip leading 'v' for comparison)
-                    let latest_version = tag.strip_prefix('v').unwrap_or(&tag);
-                    if latest_version == VERSION {
-                        println!("Already up to date.");
-                        return Ok(());
-                    }
-
-                    println!("Downloading and installing {tag}...");
-                    let installed_tag = updater::download_and_install(channel)?;
-                    println!(
-                        "Updated aclaude: {VERSION} -> {}",
-                        installed_tag.strip_prefix('v').unwrap_or(&installed_tag)
-                    );
-                    println!("Restart aclaude to use the new version.");
+            match updater::check_for_update(channel, target)? {
+                Some(tag) if tag == current_tag => {
+                    println!("Already up to date: {current_tag}");
                 }
-                None => println!("No {channel_label} releases found."),
+                Some(tag) => {
+                    if target.is_some() {
+                        println!("Current: {current_tag}");
+                        println!("Target:  {tag}");
+                    } else {
+                        println!("Latest: {tag} (current: {current_tag})");
+                    }
+                    println!("Downloading and installing {tag}...");
+                    let new_tag = updater::download_and_install(channel, target)?;
+                    println!("Updated to {new_tag}. Restart to use the new version.");
+                }
+                None => {
+                    if let Some(v) = target {
+                        println!("No release matching '{v}' found.");
+                    } else {
+                        println!("No {channel_label} releases found.");
+                    }
+                }
             }
         }
 
