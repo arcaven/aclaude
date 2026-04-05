@@ -2,6 +2,7 @@ pub mod config;
 pub mod error;
 pub mod paths;
 pub mod persona;
+pub mod petname;
 pub mod portrait;
 pub mod protocol;
 pub mod session;

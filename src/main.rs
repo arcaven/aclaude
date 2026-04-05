@@ -85,23 +85,50 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum SessionAction {
-    /// Start the aclaude tmux session (replaces tmux/start-session.sh)
+    /// Start an aclaude tmux session
     Start {
+        /// Session name (default: aclaude-{petname})
+        #[arg(short = 't', long = "session-name")]
+        name: Option<String>,
         /// tmux socket name override
         #[arg(long)]
         socket: Option<String>,
-        /// Attach terminal to the session after starting
-        #[arg(long, default_value_t = true)]
-        attach: bool,
+        /// Don't attach terminal to the session after starting
+        #[arg(long)]
+        no_attach: bool,
     },
     /// Attach to an existing aclaude session
     Attach {
+        /// Session name (auto-selects if only one exists)
+        #[arg(short = 't', long = "session-name")]
+        name: Option<String>,
         /// tmux socket name override
         #[arg(long)]
         socket: Option<String>,
     },
-    /// Stop (kill) the aclaude session
+    /// Stop (kill) an aclaude session
     Stop {
+        /// Session name (auto-selects if only one exists)
+        #[arg(short = 't', long = "session-name")]
+        name: Option<String>,
+        /// tmux socket name override
+        #[arg(long)]
+        socket: Option<String>,
+        /// Stop all sessions on the socket
+        #[arg(long)]
+        all: bool,
+    },
+    /// List aclaude sessions
+    List {
+        /// tmux socket name override
+        #[arg(long)]
+        socket: Option<String>,
+        /// Show only session names (no details)
+        #[arg(long)]
+        names: bool,
+    },
+    /// Show session status
+    Status {
         /// tmux socket name override
         #[arg(long)]
         socket: Option<String>,
@@ -299,14 +326,29 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Session { action }) => {
             let cfg = config::load_config(cli_overrides)?;
             match action {
-                SessionAction::Start { socket, attach } => {
-                    session_cmd::run_session_start(&cfg, socket.as_deref(), attach)?;
+                SessionAction::Start {
+                    name,
+                    socket,
+                    no_attach,
+                } => {
+                    session_cmd::run_session_start(
+                        &cfg,
+                        socket.as_deref(),
+                        name.as_deref(),
+                        !no_attach,
+                    )?;
                 }
-                SessionAction::Attach { socket } => {
-                    session_cmd::run_session_attach(&cfg, socket.as_deref())?;
+                SessionAction::Attach { name, socket } => {
+                    session_cmd::run_session_attach(&cfg, socket.as_deref(), name.as_deref())?;
                 }
-                SessionAction::Stop { socket } => {
-                    session_cmd::run_session_stop(&cfg, socket.as_deref())?;
+                SessionAction::Stop { name, socket, all } => {
+                    session_cmd::run_session_stop(&cfg, socket.as_deref(), name.as_deref(), all)?;
+                }
+                SessionAction::List { socket, names } => {
+                    session_cmd::run_session_list(&cfg, socket.as_deref(), names)?;
+                }
+                SessionAction::Status { socket } => {
+                    session_cmd::run_session_status(&cfg, socket.as_deref())?;
                 }
             }
         }
