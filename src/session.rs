@@ -181,7 +181,12 @@ pub fn start_streaming_session(
 }
 
 /// Run a one-shot prompt (non-interactive).
-pub fn run_prompt(config: &AclaudeConfig, prompt: &str, claude_args: &[String]) -> Result<String> {
+pub fn run_prompt(
+    config: &AclaudeConfig,
+    prompt: &str,
+    output_format: &str,
+    claude_args: &[String],
+) -> Result<String> {
     let claude_path = find_claude()?;
 
     let system_prompt = {
@@ -190,10 +195,18 @@ pub fn run_prompt(config: &AclaudeConfig, prompt: &str, claude_args: &[String]) 
         persona::build_system_prompt(&theme, agent, &config.persona.immersion)
     };
 
+    // Always request JSON from claude so we can extract the result field.
+    // Pass through stream-json directly if requested.
+    let claude_format = if output_format == "stream-json" {
+        "stream-json"
+    } else {
+        "json"
+    };
+
     let mut cmd = Command::new(&claude_path);
     cmd.args(["-p", prompt])
         .args(["--model", &config.session.model])
-        .args(["--output-format", "json"]);
+        .args(["--output-format", claude_format]);
 
     if !system_prompt.is_empty() {
         cmd.args(["--append-system-prompt", &system_prompt]);
@@ -214,5 +227,19 @@ pub fn run_prompt(config: &AclaudeConfig, prompt: &str, claude_args: &[String]) 
         });
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+
+    match output_format {
+        "json" | "stream-json" => Ok(raw),
+        _ => {
+            // Extract the "result" field from the JSON response for human output
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if let Some(result) = parsed.get("result").and_then(|v| v.as_str()) {
+                    return Ok(format!("{result}\n"));
+                }
+            }
+            // Fallback: return raw if parsing fails
+            Ok(raw)
+        }
+    }
 }

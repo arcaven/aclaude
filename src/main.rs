@@ -43,6 +43,10 @@ struct Cli {
     #[arg(short = 'p', long)]
     prompt: Option<String>,
 
+    /// Output format for one-shot prompts: text (default), json, stream-json
+    #[arg(long, default_value = "text")]
+    output_format: String,
+
     /// Use NDJSON streaming protocol (agent/programmatic mode)
     #[arg(long)]
     streaming: bool,
@@ -216,7 +220,8 @@ fn main() -> anyhow::Result<()> {
             let cfg = config::load_config(cli_overrides)?;
             if let Some(prompt) = &cli.prompt {
                 // One-shot prompt mode
-                let result = session::run_prompt(&cfg, prompt, &cli.claude_args)?;
+                let result =
+                    session::run_prompt(&cfg, prompt, &cli.output_format, &cli.claude_args)?;
                 print!("{result}");
             } else if cli.streaming {
                 // NDJSON streaming protocol (agent/programmatic mode)
