@@ -144,8 +144,10 @@ pub enum InputAction {
     ScrollUp,
     /// Scroll conversation down one line (mouse wheel).
     ScrollDown,
-    /// Toggle expanded output for most recent completed tool call.
+    /// Toggle expanded output for most recent completed tool call (Ctrl+X).
     ToggleExpand,
+    /// Cycle transcript mode: normal → transcript → focus (Ctrl+O).
+    CycleTranscript,
     /// Cycle permission mode (Shift+Tab).
     CyclePermissionMode,
     /// Allow pending permission request.
@@ -387,7 +389,8 @@ pub fn handle_key(
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => InputAction::Quit,
 
         // Ctrl shortcuts
-        (KeyModifiers::CONTROL, KeyCode::Char('o')) => InputAction::ToggleExpand,
+        (KeyModifiers::CONTROL, KeyCode::Char('o')) => InputAction::CycleTranscript,
+        (KeyModifiers::CONTROL, KeyCode::Char('x')) => InputAction::ToggleExpand,
         (KeyModifiers::CONTROL, KeyCode::Char('a')) => {
             input.home();
             InputAction::None

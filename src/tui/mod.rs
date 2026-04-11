@@ -190,10 +190,10 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                                     "Portrait: /persona portrait [on|off|top|bottom|size <s>]",
                                     "",
                                     "Keys:",
-                                    "  Ctrl+C quit         Ctrl+O expand tool   Shift+Tab permission mode",
-                                    "  Ctrl+A/E home/end   Ctrl+W del word      Ctrl+U clear line",
+                                    "  Ctrl+C quit         Ctrl+O transcript     Ctrl+X expand tool",
+                                    "  Ctrl+A/E home/end   Ctrl+W del word       Ctrl+U clear line",
                                     "  Ctrl+P portrait pos Alt+P portrait on/off Alt+S portrait size",
-                                    "  Alt+T thinking      PageUp/PageDown scroll",
+                                    "  Alt+T thinking      Shift+Tab perm mode   Ctrl+G editor",
                                     "  Up/Down history     Tab complete          Mouse wheel scroll",
                                 ].join("\n");
                                 state.items.push(app::ConversationItem::SystemNotice { text: help_text });
@@ -298,6 +298,36 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                                     state.portrait_size.label()
                                 ));
                             }
+                            InputAction::CycleTranscript => {
+                                let next = state.transcript_mode.next();
+                                if next == app::TranscriptMode::Transcript {
+                                    // Dump conversation to native terminal scrollback
+                                    let _ = execute!(
+                                        io::stdout(),
+                                        DisableMouseCapture,
+                                        LeaveAlternateScreen
+                                    );
+                                    let _ = disable_raw_mode();
+                                    print!("{}", state.conversation_as_text());
+                                    println!("--- Press any key to return ---");
+                                    // Wait for a key press
+                                    let _ = enable_raw_mode();
+                                    let _ = crossterm::event::read();
+                                    let _ = execute!(
+                                        io::stdout(),
+                                        EnterAlternateScreen,
+                                        EnableMouseCapture
+                                    );
+                                    // Stay in Normal after viewing transcript
+                                    state.transcript_mode = app::TranscriptMode::Normal;
+                                } else {
+                                    state.transcript_mode = next;
+                                    state.set_status(format!(
+                                        "View: {}",
+                                        next.label()
+                                    ));
+                                }
+                            }
                             InputAction::ToggleExpand => state.toggle_last_tool_expand(),
                             InputAction::ToggleThinking => {
                                 state.show_thinking = !state.show_thinking;
@@ -347,12 +377,14 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                 let has_perm_prompt = state.pending_permission.is_some();
 
                 terminal.draw(|frame| {
+                    let is_focus = state.transcript_mode == app::TranscriptMode::Focus;
                     let tui_layout = compute_layout(
                         frame.area(),
                         state.portrait_size,
                         state.portrait_position,
                         has_portrait,
                         has_perm_prompt,
+                        is_focus,
                     );
 
                     app::render_conversation(frame, &mut state, tui_layout.conversation);
@@ -365,7 +397,9 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                     }
 
                     app::render_input(frame, &state, tui_layout.input);
-                    app::render_status(frame, &state, tui_layout.status);
+                    if tui_layout.status.height > 0 {
+                        app::render_status(frame, &state, tui_layout.status);
+                    }
                 }).ok();
             }
         }

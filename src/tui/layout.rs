@@ -56,7 +56,50 @@ pub fn compute_layout(
     portrait_position: PortraitPosition,
     has_portrait: bool,
     has_permission_prompt: bool,
+    focus_mode: bool,
 ) -> TuiLayout {
+    // Focus mode: maximize conversation, minimal chrome
+    if focus_mode {
+        let vertical = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(1),    // conversation
+                Constraint::Length(1), // minimal input (no borders)
+            ])
+            .split(area);
+
+        let conversation = vertical[0];
+        let input = vertical[1];
+
+        let portrait = if has_portrait && area.width >= MIN_WIDTH_FOR_PORTRAIT {
+            let pw = portrait_column_width(portrait_size, area.width);
+            let ph = (pw * 3 / 4).min(conversation.height / 2).max(4);
+            let x = conversation.x + conversation.width.saturating_sub(pw);
+            let y = match portrait_position {
+                PortraitPosition::TopRight => conversation.y,
+                PortraitPosition::BottomRight => {
+                    conversation.y + conversation.height.saturating_sub(ph)
+                }
+            };
+            Rect {
+                x,
+                y,
+                width: pw,
+                height: ph,
+            }
+        } else {
+            Rect::default()
+        };
+
+        return TuiLayout {
+            conversation,
+            portrait,
+            permission_prompt: Rect::default(),
+            input,
+            status: Rect::default(),
+        };
+    }
+
     // Build constraints based on whether permission prompt is active
     let constraints = if has_permission_prompt {
         vec![

@@ -78,6 +78,45 @@ impl PortraitPosition {
     }
 }
 
+/// Transcript/view mode — cycled via Ctrl+O.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TranscriptMode {
+    /// Normal TUI rendering in alternate screen.
+    #[default]
+    Normal,
+    /// Dump conversation to native terminal scrollback.
+    Transcript,
+    /// Distraction-free: hide status bar and input borders.
+    Focus,
+}
+
+impl TranscriptMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Normal => Self::Transcript,
+            Self::Transcript => Self::Focus,
+            Self::Focus => Self::Normal,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Transcript => "transcript",
+            Self::Focus => "focus",
+        }
+    }
+}
+
+/// A diagnostic entry (placeholder for future LSP integration).
+#[derive(Debug)]
+#[allow(dead_code)]
+pub struct DiagnosticEntry {
+    pub file: String,
+    pub line: u32,
+    pub message: String,
+}
+
 /// Application status — drives visual feedback and input gating.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppStatus {
@@ -152,6 +191,8 @@ pub struct ToolCallItem {
     pub status: ToolStatus,
     pub started_at: Instant,
     pub is_expanded: bool,
+    /// Diagnostics (placeholder — empty until LSP wired).
+    pub diagnostics: Vec<DiagnosticEntry>,
 }
 
 /// Tool execution status.
@@ -263,6 +304,8 @@ pub struct AppState {
     pub pending_permission: Option<PermissionPrompt>,
     /// When the status message was set (for auto-clear after timeout).
     pub status_message_at: Option<Instant>,
+    /// Current transcript/view mode.
+    pub transcript_mode: TranscriptMode,
 }
 
 impl AppState {
@@ -283,6 +326,7 @@ impl AppState {
             permission_mode: PermissionMode::Default,
             pending_permission: None,
             status_message_at: None,
+            transcript_mode: TranscriptMode::default(),
         }
     }
 
@@ -326,6 +370,7 @@ impl AppState {
                         status: ToolStatus::InputStreaming,
                         started_at: Instant::now(),
                         is_expanded: false,
+                        diagnostics: Vec::new(),
                     }));
                 }
             }
@@ -413,6 +458,7 @@ impl AppState {
                                         status: ToolStatus::Running,
                                         started_at: Instant::now(),
                                         is_expanded: false,
+                                        diagnostics: Vec::new(),
                                     }));
                                 }
                             }
@@ -577,6 +623,62 @@ impl AppState {
                 self.status_message_at = None;
             }
         }
+    }
+
+    /// Render conversation as plain text for transcript dump.
+    pub fn conversation_as_text(&self) -> String {
+        let mut output = String::new();
+        for item in &self.items {
+            match item {
+                ConversationItem::UserMessage { text } => {
+                    output.push_str("You: ");
+                    output.push_str(text);
+                    output.push_str("\n\n");
+                }
+                ConversationItem::AssistantTurn { blocks, .. } => {
+                    for block in blocks {
+                        match block {
+                            TurnBlock::Text { content, .. } => {
+                                output.push_str(content);
+                                output.push('\n');
+                            }
+                            TurnBlock::ToolCall(tool) => {
+                                output.push_str(&format!(
+                                    "  [{} {}]\n",
+                                    match &tool.status {
+                                        ToolStatus::Complete { .. } => "✓",
+                                        ToolStatus::Error { .. } => "✗",
+                                        _ => "⟳",
+                                    },
+                                    tool.name
+                                ));
+                                if !tool.result_preview.is_empty() {
+                                    output.push_str(&format!(
+                                        "    {}\n",
+                                        tool.result_preview.lines().next().unwrap_or("")
+                                    ));
+                                }
+                            }
+                            TurnBlock::Thinking { content, .. } => {
+                                if !content.is_empty() {
+                                    output.push_str(&format!(
+                                        "  [Thinking: {} chars]\n",
+                                        content.len()
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    output.push('\n');
+                }
+                ConversationItem::SystemNotice { text } => {
+                    output.push_str("System: ");
+                    output.push_str(text);
+                    output.push_str("\n\n");
+                }
+            }
+        }
+        output
     }
 
     /// Toggle is_expanded on the most recent completed tool call.
