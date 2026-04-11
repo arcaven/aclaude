@@ -15,7 +15,7 @@ set -euo pipefail
 
 DIST_DIR="${1:?Usage: gen-manifest.sh <dist-dir> <themes-yaml-dir> [base-url]}"
 THEMES_DIR="${2:?Usage: gen-manifest.sh <dist-dir> <themes-yaml-dir> [base-url]}"
-BASE_URL="${3:-https://portraits.forestage.dev/v1}"
+BASE_URL="${3:-https://portraits.darkatelier.org/v1}"
 
 if ! command -v yq &>/dev/null; then
     echo "Error: yq not found. Install with: brew install yq" >&2

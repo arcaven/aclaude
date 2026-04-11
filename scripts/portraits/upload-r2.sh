@@ -49,5 +49,5 @@ rclone copyto "$DIST_DIR/manifest.json" r2:forestage-portraits/v1/manifest.json 
 
 echo ""
 echo "Done. Verify:"
-echo "  curl -sI https://portraits.forestage.dev/v1/manifest.json | head -10"
-echo "  curl -s https://portraits.forestage.dev/v1/manifest.json | head -5"
+echo "  curl -sI https://portraits.darkatelier.org/v1/manifest.json | head -10"
+echo "  curl -s https://portraits.darkatelier.org/v1/manifest.json | head -5"

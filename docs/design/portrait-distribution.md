@@ -17,7 +17,7 @@ Region:       auto (Cloudflare chooses closest)
 ### Custom domain
 
 ```
-Domain:    portraits.forestage.dev
+Domain:    portraits.darkatelier.org
 Type:      CNAME → <bucket>.r2.dev  (or Cloudflare custom domain binding)
 HTTPS:     automatic via Cloudflare
 ```
@@ -67,7 +67,7 @@ Set on upload via rclone flags:
 {
   "schema": 1,
   "updated": "2026-04-11T00:00:00Z",
-  "base_url": "https://portraits.forestage.dev/v1",
+  "base_url": "https://portraits.darkatelier.org/v1",
   "themes": {
     "dune": {
       "pack_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -150,7 +150,7 @@ set -euo pipefail
 
 DIST_DIR="${1:?Usage: gen-manifest.sh <dist-dir> <themes-yaml-dir>}"
 THEMES_DIR="${2:?Usage: gen-manifest.sh <dist-dir> <themes-yaml-dir>}"
-BASE_URL="${3:-https://portraits.forestage.dev/v1}"
+BASE_URL="${3:-https://portraits.darkatelier.org/v1}"
 
 # Start JSON
 cat <<HEADER
@@ -242,7 +242,7 @@ rclone copyto "$DIST_DIR/manifest.json" r2:forestage-portraits/v1/manifest.json 
     --header-upload "Cache-Control: public, max-age=3600" \
     --progress
 
-echo "Done. Verify: curl -I https://portraits.forestage.dev/v1/manifest.json"
+echo "Done. Verify: curl -I https://portraits.darkatelier.org/v1/manifest.json"
 ```
 
 ---
@@ -296,7 +296,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::error::{ForestageError, Result};
 use crate::portrait::portrait_cache_dir;
 
-const MANIFEST_URL: &str = "https://portraits.forestage.dev/v1/manifest.json";
+const MANIFEST_URL: &str = "https://portraits.darkatelier.org/v1/manifest.json";
 const MANIFEST_CHECK_INTERVAL_SECS: u64 = 86400; // 24h
 
 /// Remote manifest schema.
