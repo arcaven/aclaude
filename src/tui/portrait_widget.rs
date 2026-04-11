@@ -87,9 +87,11 @@ impl PortraitWidget {
             return None;
         }
 
-        // Image size in cells at native resolution
-        let native_cols = (px_w as u16).div_ceil(font.0);
-        let native_rows = (px_h as u16).div_ceil(font.1);
+        // Image size in cells at native resolution (cap to prevent u16 overflow)
+        let capped_w = px_w.min(u16::MAX as u32) as u16;
+        let capped_h = px_h.min(u16::MAX as u32) as u16;
+        let native_cols = capped_w.div_ceil(font.0);
+        let native_rows = capped_h.div_ceil(font.1);
 
         if native_cols == 0 || native_rows == 0 {
             return None;

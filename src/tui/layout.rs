@@ -41,7 +41,8 @@ pub fn compute_layout(
     // No left/right borders, so inner width = area width.
     // +2 for "> " prefix, +2 for borders (top + bottom).
     let text_cols = area.width; // no left/right borders
-    let text_with_prefix = input_len as u16 + 2; // "> " prefix
+    let capped_len = input_len.min(u16::MAX as usize - 2) as u16;
+    let text_with_prefix = capped_len + 2; // "> " prefix
     let text_lines = if text_cols == 0 {
         1
     } else {

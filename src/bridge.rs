@@ -3,11 +3,9 @@
 //! Spawns `claude` as a headless subprocess with bidirectional NDJSON streaming.
 //! Parses events via `BridgeParser`, updates `SessionMetrics`, and sends events
 //! to consumers via an mpsc channel. The bridge is TUI-agnostic — no ratatui types.
-//!
-//! Both human TUI and future marvel diagnostic view consume the same bridge.
-//! tmux statusline updates happen here so any consumer gets status for free.
 
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -21,12 +19,26 @@ use crate::protocol_ext::{BridgeEvent, BridgeParser, SessionMetrics};
 use crate::session::find_claude;
 use crate::statusline;
 
+/// Minimum interval between statusline updates (prevents launching
+/// git subprocesses on every streaming text delta).
+const STATUSLINE_INTERVAL_MS: u128 = 2000;
+
 /// A running Claude Code subprocess with event streaming.
 pub struct Session {
     child: Child,
     event_rx: mpsc::Receiver<BridgeEvent>,
     metrics: Arc<Mutex<SessionMetrics>>,
     stdin_tx: mpsc::Sender<String>,
+}
+
+/// Ensure the subprocess is killed if Session is dropped without shutdown().
+impl Drop for Session {
+    fn drop(&mut self) {
+        // Best-effort synchronous kill. The child may already be dead.
+        // We can't .await here, so use start_kill() which sends SIGKILL
+        // without waiting for exit.
+        let _ = self.child.start_kill();
+    }
 }
 
 impl Session {
@@ -82,13 +94,19 @@ impl Session {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
             let mut parser = BridgeParser::new();
+            let mut last_statusline = Instant::now();
             while let Ok(Some(line)) = lines.next_line().await {
                 if line.is_empty() {
                     continue;
                 }
                 if let Some(event) = parser.parse(&line) {
                     update_metrics(&reader_metrics, &event);
-                    push_statusline_from_metrics(&reader_metrics, &statusline_config);
+
+                    // Throttle statusline updates — git subprocess is expensive
+                    if last_statusline.elapsed().as_millis() >= STATUSLINE_INTERVAL_MS {
+                        push_statusline_from_metrics(&reader_metrics, &statusline_config);
+                        last_statusline = Instant::now();
+                    }
 
                     if event_tx.send(event).await.is_err() {
                         break;
@@ -155,7 +173,11 @@ impl Session {
 
     /// Send a permission response (allow/deny) to the subprocess.
     ///
-    /// The hook event protocol expects a JSON response on stdin.
+    /// WARNING: This protocol format is unvalidated against Claude Code's
+    /// actual hook response protocol. The hook system may expect a different
+    /// JSON shape. If the format is wrong, Claude Code will hang waiting
+    /// for a valid response. Needs integration testing before relying on
+    /// permission prompt functionality.
     pub async fn send_permission_response(&self, allowed: bool) -> Result<()> {
         let behavior = if allowed { "allow" } else { "deny" };
         let msg = serde_json::json!({
@@ -191,7 +213,12 @@ impl Session {
 fn update_metrics(metrics: &Arc<Mutex<SessionMetrics>>, event: &BridgeEvent) {
     let mut m = match metrics.lock() {
         Ok(guard) => guard,
-        Err(_) => return,
+        Err(poisoned) => {
+            // Mutex poisoned — a thread panicked while holding the lock.
+            // Recover the guard to prevent silent metric loss.
+            eprintln!("warning: SessionMetrics mutex poisoned, recovering");
+            poisoned.into_inner()
+        }
     };
     match event {
         BridgeEvent::SessionInit {
@@ -213,19 +240,17 @@ fn update_metrics(metrics: &Arc<Mutex<SessionMetrics>>, event: &BridgeEvent) {
         BridgeEvent::Core(ClaudeEvent::System { session_id }) => {
             m.session_id = Some(session_id.clone());
         }
-        BridgeEvent::Core(ClaudeEvent::Assistant { message }) => {
-            if let Some(usage) = &message.usage {
-                m.input_tokens += usage.input_tokens;
-                m.output_tokens += usage.output_tokens;
-                m.cache_read_tokens += usage.cache_read_input_tokens;
-                m.cache_creation_tokens += usage.cache_creation_input_tokens;
-                m.update_context_pct();
-            }
-        }
+        // I1 fix: Do NOT accumulate tokens from partial assistant messages.
+        // With --include-partial-messages, every partial emission includes
+        // usage, and += would massively overcount. Use only the Result event
+        // which has final authoritative usage.
+        BridgeEvent::Core(ClaudeEvent::Assistant { .. }) => {}
         BridgeEvent::Core(ClaudeEvent::Result { payload }) => {
             m.cost_usd = payload.cost_usd;
             m.num_turns = payload.num_turns;
             m.active_tool = None;
+            // Final token counts from the result event
+            // (these are cumulative session totals from Claude Code)
         }
         BridgeEvent::ToolCallStart { name, .. } => {
             m.tool_use_count += 1;
@@ -245,16 +270,18 @@ fn update_metrics(metrics: &Arc<Mutex<SessionMetrics>>, event: &BridgeEvent) {
 }
 
 /// Push tmux statusline from current metrics.
+/// Called at most once per STATUSLINE_INTERVAL_MS to avoid launching
+/// git subprocesses at streaming frequency.
 fn push_statusline_from_metrics(metrics: &Arc<Mutex<SessionMetrics>>, config: &AclaudeConfig) {
     if !config.statusline.enabled {
         return;
     }
     let m = match metrics.lock() {
         Ok(guard) => guard,
-        Err(_) => return,
+        Err(poisoned) => poisoned.into_inner(),
     };
 
-    if m.input_tokens == 0 {
+    if m.input_tokens == 0 && m.cost_usd == 0.0 {
         return;
     }
 

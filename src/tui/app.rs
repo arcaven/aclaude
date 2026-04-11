@@ -938,7 +938,8 @@ pub fn render_input(frame: &mut Frame, state: &AppState, area: Rect) {
     // No left/right borders — inner width equals area width.
     // +2 for "> " prefix.
     let inner_width = area.width;
-    let char_pos = state.input.cursor as u16 + 2; // +2 for "> "
+    let capped_cursor = state.input.cursor.min(u16::MAX as usize - 2) as u16;
+    let char_pos = capped_cursor + 2; // +2 for "> "
     let (cursor_x, cursor_y) = if inner_width == 0 {
         (area.x, area.y + 1)
     } else {

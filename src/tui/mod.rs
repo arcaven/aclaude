@@ -72,6 +72,21 @@ impl TextBatcher {
 
 /// Run the TUI.
 pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
+    // Install panic hook to restore terminal state on panic.
+    // Without this, a panic leaves the terminal in raw mode with
+    // alternate screen and mouse capture still active.
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            io::stdout(),
+            DisableBracketedPaste,
+            DisableMouseCapture,
+            LeaveAlternateScreen
+        );
+        original_hook(info);
+    }));
+
     // Resolve portrait
     let theme = persona::load_theme(&config.persona.theme)?;
     let agent = persona::get_agent(&theme, &config.persona.role)?;
