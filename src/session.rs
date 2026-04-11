@@ -1,8 +1,8 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
-use crate::config::AclaudeConfig;
-use crate::error::{AclaudeError, Result};
+use crate::config::ForestageConfig;
+use crate::error::{ForestageError, Result};
 use crate::persona;
 use crate::protocol::{self, ClaudeEvent, SessionUsage};
 use crate::statusline;
@@ -17,7 +17,7 @@ pub fn find_claude() -> Result<String> {
 
     match output {
         Ok(o) if o.status.success() => Ok("claude".to_string()),
-        _ => Err(AclaudeError::ClaudeNotFound),
+        _ => Err(ForestageError::ClaudeNotFound),
     }
 }
 
@@ -26,7 +26,7 @@ pub fn find_claude() -> Result<String> {
 /// Spawns `claude` with inherited stdio so the user gets the full Claude Code
 /// TUI experience. The persona system prompt is injected via --append-system-prompt.
 /// Any extra `claude_args` are passed through directly to the claude CLI.
-pub fn start_session(config: &AclaudeConfig, claude_args: &[String]) -> Result<()> {
+pub fn start_session(config: &ForestageConfig, claude_args: &[String]) -> Result<()> {
     let claude_path = find_claude()?;
 
     let system_prompt = {
@@ -50,14 +50,14 @@ pub fn start_session(config: &AclaudeConfig, claude_args: &[String]) -> Result<(
         cmd.args(claude_args);
     }
 
-    let status = cmd.status().map_err(|e| AclaudeError::Session {
+    let status = cmd.status().map_err(|e| ForestageError::Session {
         message: format!("failed to start claude: {e}"),
     })?;
 
     if !status.success() {
         let code = status.code().unwrap_or(-1);
         if code != 0 {
-            return Err(AclaudeError::Session {
+            return Err(ForestageError::Session {
                 message: format!("claude exited with code {code}"),
             });
         }
@@ -72,7 +72,7 @@ pub fn start_session(config: &AclaudeConfig, claude_args: &[String]) -> Result<(
 /// token usage, tool invocations, and session metadata. Used for agent
 /// mode and non-interactive automation.
 pub fn start_streaming_session(
-    config: &AclaudeConfig,
+    config: &ForestageConfig,
     claude_args: &[String],
 ) -> Result<SessionUsage> {
     let claude_path = find_claude()?;
@@ -100,7 +100,7 @@ pub fn start_streaming_session(
         cmd.args(claude_args);
     }
 
-    let mut child = cmd.spawn().map_err(|e| AclaudeError::Session {
+    let mut child = cmd.spawn().map_err(|e| ForestageError::Session {
         message: format!("failed to start claude: {e}"),
     })?;
 
@@ -155,7 +155,7 @@ pub fn start_streaming_session(
                             .and_then(|t| persona::get_agent(t, &config.persona.role).ok());
                         let character_name = agent
                             .map(|a| a.character.clone())
-                            .unwrap_or_else(|| "aclaude".to_string());
+                            .unwrap_or_else(|| "forestage".to_string());
                         let context_pct = usage.context_pct(200_000);
                         let left = statusline::render_statusline(
                             config,
@@ -182,7 +182,7 @@ pub fn start_streaming_session(
 
 /// Run a one-shot prompt (non-interactive).
 pub fn run_prompt(
-    config: &AclaudeConfig,
+    config: &ForestageConfig,
     prompt: &str,
     output_format: &str,
     claude_args: &[String],
@@ -216,13 +216,13 @@ pub fn run_prompt(
         cmd.args(claude_args);
     }
 
-    let output = cmd.output().map_err(|e| AclaudeError::Session {
+    let output = cmd.output().map_err(|e| ForestageError::Session {
         message: format!("failed to run claude: {e}"),
     })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(AclaudeError::Session {
+        return Err(ForestageError::Session {
             message: format!("claude error: {stderr}"),
         });
     }

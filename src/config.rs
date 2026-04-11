@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{AclaudeError, Result};
+use crate::error::{ForestageError, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionConfig {
@@ -12,7 +12,7 @@ pub struct SessionConfig {
     pub model: String,
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u64,
-    /// Interactive mode: "aclaude" (custom TUI) or "claude" (native Claude Code TUI).
+    /// Interactive mode: "forestage" (custom TUI) or "claude" (native Claude Code TUI).
     #[serde(default = "default_mode")]
     pub mode: String,
 }
@@ -24,7 +24,7 @@ fn default_max_tokens() -> u64 {
     16384
 }
 fn default_mode() -> String {
-    "aclaude".to_string()
+    "forestage".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,7 +109,7 @@ fn default_status_interval() -> u32 {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct AclaudeConfig {
+pub struct ForestageConfig {
     #[serde(default)]
     pub session: SessionConfig,
     #[serde(default)]
@@ -185,8 +185,8 @@ pub fn config_paths() -> ConfigPaths {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     ConfigPaths {
         defaults: PathBuf::from("config/defaults.toml"),
-        global: xdg_config_home().join("aclaude/config.toml"),
-        local: cwd.join(".aclaude/config.toml"),
+        global: xdg_config_home().join("forestage/config.toml"),
+        local: cwd.join(".forestage/config.toml"),
     }
 }
 
@@ -220,12 +220,12 @@ fn deep_merge(target: &mut toml::Table, source: &toml::Table) {
     }
 }
 
-/// Apply ACLAUDE_* environment variable overrides.
+/// Apply FORESTAGE_* environment variable overrides.
 ///
-/// Format: `ACLAUDE_SECTION__FIELD=value`
+/// Format: `FORESTAGE_SECTION__FIELD=value`
 /// Double underscore separates section from field.
 fn apply_env_overrides(table: &mut toml::Table) {
-    let prefix = "ACLAUDE_";
+    let prefix = "FORESTAGE_";
     for (key, value) in env::vars() {
         if !key.starts_with(prefix) {
             continue;
@@ -258,11 +258,11 @@ fn apply_env_overrides(table: &mut toml::Table) {
 
 /// Load the full config with 5-layer merge:
 /// defaults -> global -> local -> env -> CLI overrides
-pub fn load_config(overrides: Option<&toml::Table>) -> Result<AclaudeConfig> {
+pub fn load_config(overrides: Option<&toml::Table>) -> Result<ForestageConfig> {
     let paths = config_paths();
 
     // Layer 1: built-in defaults (from Default impl) + file defaults
-    let mut table = toml::to_string(&AclaudeConfig::default())
+    let mut table = toml::to_string(&ForestageConfig::default())
         .expect("default config serializes")
         .parse::<toml::Table>()
         .expect("default config parses");
@@ -292,10 +292,10 @@ pub fn load_config(overrides: Option<&toml::Table>) -> Result<AclaudeConfig> {
         deep_merge(&mut table, cli);
     }
 
-    let config: AclaudeConfig =
+    let config: ForestageConfig =
         toml::Value::Table(table)
             .try_into()
-            .map_err(|e| AclaudeError::Config {
+            .map_err(|e| ForestageError::Config {
                 message: format!("config merge failed: {e}"),
             })?;
 

@@ -3,7 +3,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use tmux_cmc::{Client, ConnectOptions, NewSessionOptions};
 
-use crate::config::AclaudeConfig;
+use crate::config::ForestageConfig;
 use crate::petname;
 
 /// Name of the shared control session (one per socket).
@@ -12,16 +12,16 @@ const CTRL_SESSION: &str = "_ctrl";
 /// Prefix used to identify control sessions in listings.
 const CTRL_PREFIX: &str = "_ctrl";
 
-/// Return the binary name the user invoked (e.g. "aclaude-a" or "aclaude").
+/// Return the binary name the user invoked (e.g. "forestage-a" or "forestage").
 fn binary_name() -> String {
     std::env::current_exe()
         .ok()
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-        .unwrap_or_else(|| "aclaude".to_string())
+        .unwrap_or_else(|| "forestage".to_string())
 }
 
 /// Resolve the socket name from CLI arg or config.
-fn socket_name(config: &AclaudeConfig, socket: Option<&str>) -> String {
+fn socket_name(config: &ForestageConfig, socket: Option<&str>) -> String {
     socket
         .map(str::to_owned)
         .unwrap_or_else(|| config.tmux.socket.clone())
@@ -30,7 +30,7 @@ fn socket_name(config: &AclaudeConfig, socket: Option<&str>) -> String {
 /// Resolve the session name: use the provided name, or generate a petname.
 fn resolve_session_name(name: Option<&str>) -> String {
     name.map(str::to_owned)
-        .unwrap_or_else(|| format!("aclaude-{}", petname::generate()))
+        .unwrap_or_else(|| format!("forestage-{}", petname::generate()))
 }
 
 /// Check how many user sessions exist on the socket.
@@ -80,9 +80,9 @@ fn smart_connect(socket: &str, session_name: &str, is_new_session: bool) -> Resu
     Client::connect(&opts).context("failed to connect to tmux — is tmux installed?")
 }
 
-/// Start (or attach to) an aclaude tmux session.
+/// Start (or attach to) an forestage tmux session.
 pub fn run_session_start(
-    config: &AclaudeConfig,
+    config: &ForestageConfig,
     socket: Option<&str>,
     session_name: Option<&str>,
     attach: bool,
@@ -172,7 +172,7 @@ pub fn run_session_start(
 }
 
 /// Configure statusline for a session.
-fn configure_session(client: &Client, config: &AclaudeConfig, session_name: &str) -> Result<()> {
+fn configure_session(client: &Client, config: &ForestageConfig, session_name: &str) -> Result<()> {
     // Query the session ID
     let resp = client
         .run_command(&format!(
@@ -190,31 +190,31 @@ fn configure_session(client: &Client, config: &AclaudeConfig, session_name: &str
         .set_status_interval(&session, config.tmux.status_interval)
         .context("set-option status-interval failed")?;
     client
-        .set_status_left(&session, &format!(" aclaude | {session_name} "))
+        .set_status_left(&session, &format!(" forestage | {session_name} "))
         .context("set-option status-left failed")?;
     client
         .set_status_right(&session, "")
         .context("set-option status-right failed")?;
 
     // Enable Kitty graphics passthrough for portrait display (tmux 3.3+).
-    // Global scope on the dedicated aclaude socket — doesn't affect other tmux sessions.
+    // Global scope on the dedicated forestage socket — doesn't affect other tmux sessions.
     // Ignore errors: older tmux versions don't have this option.
     let _ = client.set_global_option("allow-passthrough", "on");
 
     Ok(())
 }
 
-/// Launch aclaude binary in the first pane of a session.
+/// Launch forestage binary in the first pane of a session.
 fn launch_in_pane(client: &Client, session_name: &str) -> Result<()> {
-    let aclaude_bin =
-        std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("aclaude"));
-    let aclaude_path = aclaude_bin.to_string_lossy();
+    let forestage_bin =
+        std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("forestage"));
+    let forestage_path = forestage_bin.to_string_lossy();
 
-    // Use 'exec' to replace the shell process with aclaude. This avoids
+    // Use 'exec' to replace the shell process with forestage. This avoids
     // leaving an orphan shell and the TUI overwrites the echoed command.
     client
         .run_command(&format!(
-            "send-keys -t '{session_name}:0.0' 'exec {aclaude_path}' Enter"
+            "send-keys -t '{session_name}:0.0' 'exec {forestage_path}' Enter"
         ))
         .context("send-keys failed")?;
     Ok(())
@@ -233,9 +233,9 @@ fn exec_attach(socket: &str, session_name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Attach to an existing aclaude session.
+/// Attach to an existing forestage session.
 pub fn run_session_attach(
-    config: &AclaudeConfig,
+    config: &ForestageConfig,
     socket: Option<&str>,
     session_name: Option<&str>,
 ) -> Result<()> {
@@ -246,7 +246,7 @@ pub fn run_session_attach(
         None => {
             let sessions = list_user_sessions(&socket)?;
             match sessions.len() {
-                0 => anyhow::bail!("no aclaude sessions found on socket '{socket}'"),
+                0 => anyhow::bail!("no forestage sessions found on socket '{socket}'"),
                 1 => sessions[0].clone(),
                 _ => {
                     println!("Multiple sessions found:");
@@ -266,9 +266,9 @@ pub fn run_session_attach(
     exec_attach(&socket, &target)
 }
 
-/// Stop (kill) an aclaude session, or all sessions.
+/// Stop (kill) an forestage session, or all sessions.
 pub fn run_session_stop(
-    config: &AclaudeConfig,
+    config: &ForestageConfig,
     socket: Option<&str>,
     session_name: Option<&str>,
     all: bool,
@@ -295,7 +295,7 @@ pub fn run_session_stop(
             let sessions = list_user_sessions(&socket)?;
             match sessions.len() {
                 0 => {
-                    println!("No aclaude sessions found.");
+                    println!("No forestage sessions found.");
                     return Ok(());
                 }
                 1 => sessions[0].clone(),
@@ -329,7 +329,7 @@ pub fn run_session_stop(
 
 /// List sessions. Excludes control sessions unless `show_all` is true.
 pub fn run_session_list(
-    config: &AclaudeConfig,
+    config: &ForestageConfig,
     socket: Option<&str>,
     names_only: bool,
     show_all: bool,
@@ -364,7 +364,7 @@ pub fn run_session_list(
 
 /// Show status of sessions. Excludes control sessions unless `show_all` is true.
 pub fn run_session_status(
-    config: &AclaudeConfig,
+    config: &ForestageConfig,
     socket: Option<&str>,
     show_all: bool,
 ) -> Result<()> {
@@ -406,7 +406,7 @@ pub fn run_session_status(
     }
 
     if visible_sessions.is_empty() {
-        println!("No aclaude sessions.");
+        println!("No forestage sessions.");
         return Ok(());
     }
 

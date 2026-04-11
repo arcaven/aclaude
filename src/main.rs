@@ -1,23 +1,23 @@
 #![forbid(unsafe_code)]
 
-use aclaude::config;
-use aclaude::persona;
-use aclaude::portrait;
-use aclaude::session;
-use aclaude::session_cmd;
-use aclaude::tui;
-use aclaude::updater;
 use clap::{Parser, Subcommand};
+use forestage::config;
+use forestage::persona;
+use forestage::portrait;
+use forestage::session;
+use forestage::session_cmd;
+use forestage::tui;
+use forestage::updater;
 
 /// Build-time version info injected by build.rs.
-const VERSION: &str = env!("ACLAUDE_VERSION");
-const COMMIT: &str = env!("ACLAUDE_COMMIT");
-const BUILD_TIME: &str = env!("ACLAUDE_BUILD_TIME");
-const CHANNEL: &str = env!("ACLAUDE_CHANNEL");
+const VERSION: &str = env!("FORESTAGE_VERSION");
+const COMMIT: &str = env!("FORESTAGE_COMMIT");
+const BUILD_TIME: &str = env!("FORESTAGE_BUILD_TIME");
+const CHANNEL: &str = env!("FORESTAGE_CHANNEL");
 #[derive(Parser)]
 #[command(
-    name = "aclaude",
-    version = env!("ACLAUDE_LONG_VERSION"),
+    name = "forestage",
+    version = env!("FORESTAGE_LONG_VERSION"),
     about = "Opinionated Claude Code distribution with persona theming"
 )]
 struct Cli {
@@ -52,7 +52,7 @@ struct Cli {
     #[arg(long)]
     streaming: bool,
 
-    /// Interactive mode: "aclaude" (custom TUI) or "claude" (native Claude Code TUI)
+    /// Interactive mode: "forestage" (custom TUI) or "claude" (native Claude Code TUI)
     #[arg(long)]
     mode: Option<String>,
 
@@ -72,7 +72,7 @@ enum Commands {
         action: PersonaAction,
     },
 
-    /// Manage the aclaude tmux session
+    /// Manage the forestage tmux session
     Session {
         #[command(subcommand)]
         action: SessionAction,
@@ -100,9 +100,9 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum SessionAction {
-    /// Start an aclaude tmux session
+    /// Start an forestage tmux session
     Start {
-        /// Session name (default: aclaude-{petname})
+        /// Session name (default: forestage-{petname})
         #[arg(short = 't', long = "session-name")]
         name: Option<String>,
         /// tmux socket name override
@@ -112,7 +112,7 @@ enum SessionAction {
         #[arg(long)]
         no_attach: bool,
     },
-    /// Attach to an existing aclaude session
+    /// Attach to an existing forestage session
     Attach {
         /// Session name (auto-selects if only one exists)
         #[arg(short = 't', long = "session-name")]
@@ -121,7 +121,7 @@ enum SessionAction {
         #[arg(long)]
         socket: Option<String>,
     },
-    /// Stop (kill) an aclaude session
+    /// Stop (kill) an forestage session
     Stop {
         /// Session name (auto-selects if only one exists)
         #[arg(short = 't', long = "session-name")]
@@ -133,7 +133,7 @@ enum SessionAction {
         #[arg(long)]
         all: bool,
     },
-    /// List aclaude sessions
+    /// List forestage sessions
     List {
         /// tmux socket name override
         #[arg(long)]
@@ -256,11 +256,11 @@ fn main() -> anyhow::Result<()> {
                         session::start_session(&cfg, &cli.claude_args)?;
                     }
                     _ => {
-                        // aclaude TUI (custom ratatui over NDJSON)
+                        // forestage TUI (custom ratatui over NDJSON)
                         let rt = tokio::runtime::Builder::new_current_thread()
                             .enable_all()
                             .build()
-                            .map_err(|e| aclaude::error::AclaudeError::Session {
+                            .map_err(|e| forestage::error::ForestageError::Session {
                                 message: format!("failed to create async runtime: {e}"),
                             })?;
                         rt.block_on(tui::run_tui(&cfg))?;
@@ -405,28 +405,28 @@ fn main() -> anyhow::Result<()> {
                 "alpha"
             };
 
-            // Check how aclaude was installed
+            // Check how forestage was installed
             let bin = updater::binary_name();
             match updater::detect_install_method()? {
                 updater::InstallMethod::Homebrew => {
-                    let formula = if bin.starts_with("aclaude-a") {
-                        "ArcavenAE/tap/aclaude-a"
+                    let formula = if bin.starts_with("forestage-a") {
+                        "ArcavenAE/tap/forestage-a"
                     } else {
-                        "ArcavenAE/tap/aclaude"
+                        "ArcavenAE/tap/forestage"
                     };
-                    println!("aclaude was installed via Homebrew.");
+                    println!("forestage was installed via Homebrew.");
                     println!("Run: brew upgrade {formula}");
                     return Ok(());
                 }
                 updater::InstallMethod::LinuxPackageManager { manager } => {
-                    println!("aclaude was installed via {manager}.");
+                    println!("forestage was installed via {manager}.");
                     println!("Update using your package manager.");
                     return Ok(());
                 }
                 updater::InstallMethod::DirectBinary => {}
             }
 
-            let current_tag = env!("ACLAUDE_TAG");
+            let current_tag = env!("FORESTAGE_TAG");
             let target = version.as_deref();
 
             println!("Checking for updates ({channel_label})...");
@@ -456,7 +456,7 @@ fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Version) => {
-            println!("aclaude {VERSION}");
+            println!("forestage {VERSION}");
             println!("  commit:  {COMMIT}");
             println!("  built:   {BUILD_TIME}");
             println!("  channel: {CHANNEL}");
@@ -467,7 +467,7 @@ fn main() -> anyhow::Result<()> {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| aclaude::error::AclaudeError::Session {
+                .map_err(|e| forestage::error::ForestageError::Session {
                     message: format!("failed to create async runtime: {e}"),
                 })?;
             rt.block_on(tui::run_tui(&cfg))?;

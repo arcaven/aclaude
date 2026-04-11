@@ -11,8 +11,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
-use crate::config::AclaudeConfig;
-use crate::error::{AclaudeError, Result};
+use crate::config::ForestageConfig;
+use crate::error::{ForestageError, Result};
 use crate::persona;
 use crate::protocol::ClaudeEvent;
 use crate::protocol_ext::{BridgeEvent, BridgeParser, SessionMetrics};
@@ -43,7 +43,7 @@ impl Drop for Session {
 
 impl Session {
     /// Spawn a Claude Code subprocess with NDJSON streaming.
-    pub async fn spawn(config: &AclaudeConfig) -> Result<Self> {
+    pub async fn spawn(config: &ForestageConfig) -> Result<Self> {
         let claude_path = find_claude()?;
 
         let system_prompt = {
@@ -67,15 +67,15 @@ impl Session {
             cmd.args(["--append-system-prompt", &system_prompt]);
         }
 
-        let mut child = cmd.spawn().map_err(|e| AclaudeError::Session {
+        let mut child = cmd.spawn().map_err(|e| ForestageError::Session {
             message: format!("failed to start claude: {e}"),
         })?;
 
-        let stdout = child.stdout.take().ok_or_else(|| AclaudeError::Session {
+        let stdout = child.stdout.take().ok_or_else(|| ForestageError::Session {
             message: "failed to capture claude stdout".to_string(),
         })?;
 
-        let child_stdin = child.stdin.take().ok_or_else(|| AclaudeError::Session {
+        let child_stdin = child.stdin.take().ok_or_else(|| ForestageError::Session {
             message: "failed to capture claude stdin".to_string(),
         })?;
 
@@ -158,7 +158,7 @@ impl Session {
         let line = format!(
             "{}\n",
             serde_json::to_string(&msg).map_err(|e| {
-                AclaudeError::Session {
+                ForestageError::Session {
                     message: format!("failed to serialize message: {e}"),
                 }
             })?
@@ -166,7 +166,7 @@ impl Session {
         self.stdin_tx
             .send(line)
             .await
-            .map_err(|_| AclaudeError::Session {
+            .map_err(|_| ForestageError::Session {
                 message: "subprocess stdin closed".to_string(),
             })
     }
@@ -189,7 +189,7 @@ impl Session {
         let line = format!(
             "{}\n",
             serde_json::to_string(&msg).map_err(|e| {
-                AclaudeError::Session {
+                ForestageError::Session {
                     message: format!("failed to serialize permission response: {e}"),
                 }
             })?
@@ -197,7 +197,7 @@ impl Session {
         self.stdin_tx
             .send(line)
             .await
-            .map_err(|_| AclaudeError::Session {
+            .map_err(|_| ForestageError::Session {
                 message: "subprocess stdin closed".to_string(),
             })
     }
@@ -272,7 +272,7 @@ fn update_metrics(metrics: &Arc<Mutex<SessionMetrics>>, event: &BridgeEvent) {
 /// Push tmux statusline from current metrics.
 /// Called at most once per STATUSLINE_INTERVAL_MS to avoid launching
 /// git subprocesses at streaming frequency.
-fn push_statusline_from_metrics(metrics: &Arc<Mutex<SessionMetrics>>, config: &AclaudeConfig) {
+fn push_statusline_from_metrics(metrics: &Arc<Mutex<SessionMetrics>>, config: &ForestageConfig) {
     if !config.statusline.enabled {
         return;
     }
@@ -290,7 +290,7 @@ fn push_statusline_from_metrics(metrics: &Arc<Mutex<SessionMetrics>>, config: &A
         .theme
         .split('/')
         .next_back()
-        .unwrap_or("aclaude");
+        .unwrap_or("forestage");
     let left = statusline::render_statusline(config, character_name, Some(m.context_pct));
     let right = statusline::build_progress_bar(m.context_pct, 10);
     statusline::write_tmux_cache(&left, &right);

@@ -1,4 +1,4 @@
-//! TUI module — ratatui-based terminal interface for aclaude.
+//! TUI module — ratatui-based terminal interface for forestage.
 //!
 //! Wraps Claude Code as a headless subprocess and renders a custom TUI
 //! around the NDJSON event stream. This is one consumer of the session
@@ -34,7 +34,7 @@ use self::input::{InputAction, InputHistory, SlashCmd, handle_key};
 use self::layout::compute_layout;
 use self::portrait_widget::PortraitWidget;
 use crate::bridge;
-use crate::config::AclaudeConfig;
+use crate::config::ForestageConfig;
 use crate::error::Result;
 use crate::persona;
 use crate::portrait;
@@ -73,7 +73,7 @@ impl TextBatcher {
 }
 
 /// Run the TUI.
-pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
+pub async fn run_tui(config: &ForestageConfig) -> Result<()> {
     // Install panic hook to restore terminal state on panic.
     // Without this, a panic leaves the terminal in raw mode with
     // alternate screen and mouse capture still active.
@@ -96,7 +96,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
         portrait::resolve_portrait(&config.persona.theme, agent, Some(&config.persona.role));
 
     // Terminal setup: raw mode FIRST, then picker query, then terminal
-    enable_raw_mode().map_err(|e| crate::error::AclaudeError::Session {
+    enable_raw_mode().map_err(|e| crate::error::ForestageError::Session {
         message: format!("failed to enable raw mode: {e}"),
     })?;
 
@@ -113,7 +113,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
     )
     .map_err(|e| {
         let _ = disable_raw_mode();
-        crate::error::AclaudeError::Session {
+        crate::error::ForestageError::Session {
             message: format!("failed to enter alternate screen: {e}"),
         }
     })?;
@@ -122,7 +122,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
     let mut terminal = Terminal::new(backend).map_err(|e| {
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
         let _ = disable_raw_mode();
-        crate::error::AclaudeError::Session {
+        crate::error::ForestageError::Session {
             message: format!("failed to create terminal: {e}"),
         }
     })?;

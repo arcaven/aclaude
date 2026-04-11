@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-/// Static slash commands (always available, handled locally by aclaude).
+/// Static slash commands (always available, handled locally by forestage).
 const LOCAL_COMMANDS: &[&str] = &[
     "/clear",
     "/cost",

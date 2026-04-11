@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::config::AclaudeConfig;
+use crate::config::ForestageConfig;
 
 /// ANSI color codes for terminal output.
 mod ansi {
@@ -69,7 +69,7 @@ pub fn build_progress_bar(pct: f64, width: usize) -> String {
 
 /// Render the statusline string.
 pub fn render_statusline(
-    config: &AclaudeConfig,
+    config: &ForestageConfig,
     character_name: &str,
     context_pct: Option<f64>,
 ) -> String {
@@ -146,7 +146,7 @@ pub fn push_statusline(
 
 /// Write tmux status cache files for polling (legacy fallback).
 pub fn write_tmux_cache(left: &str, right: &str) {
-    let cache_dir = Path::new(".aclaude");
+    let cache_dir = Path::new(".forestage");
     let _ = fs::create_dir_all(cache_dir);
     let _ = fs::write(cache_dir.join("tmux-status-left"), left);
     let _ = fs::write(cache_dir.join("tmux-status-right"), right);

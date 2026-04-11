@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{AclaudeError, Result};
+use crate::error::{ForestageError, Result};
 
 include!(concat!(env!("OUT_DIR"), "/themes_embedded.rs"));
 
@@ -80,11 +80,11 @@ pub fn load_theme(slug: &str) -> Result<ThemeFile> {
     let themes = embedded_themes();
     let yaml = themes
         .get(slug)
-        .ok_or_else(|| AclaudeError::ThemeNotFound {
+        .ok_or_else(|| ForestageError::ThemeNotFound {
             slug: slug.to_string(),
         })?;
 
-    let theme: ThemeFile = serde_yaml::from_str(yaml).map_err(|e| AclaudeError::Yaml {
+    let theme: ThemeFile = serde_yaml::from_str(yaml).map_err(|e| ForestageError::Yaml {
         path: format!("embedded:{slug}"),
         source: e,
     })?;
@@ -97,7 +97,7 @@ pub fn get_agent<'a>(theme: &'a ThemeFile, role: &str) -> Result<&'a PersonaAgen
     theme
         .agents
         .get(role)
-        .ok_or_else(|| AclaudeError::RoleNotFound {
+        .ok_or_else(|| ForestageError::RoleNotFound {
             role: role.to_string(),
             theme: theme.theme.name.clone(),
         })

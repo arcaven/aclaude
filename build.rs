@@ -30,21 +30,21 @@ fn generate_version() {
 
     let build_time = chrono::Utc::now().to_rfc3339();
 
-    let channel = env::var("ACLAUDE_CHANNEL").unwrap_or_else(|_| "alpha".to_string());
-    let tag = env::var("ACLAUDE_TAG").unwrap_or_else(|_| format!("{version}-{commit}"));
+    let channel = env::var("FORESTAGE_CHANNEL").unwrap_or_else(|_| "alpha".to_string());
+    let tag = env::var("FORESTAGE_TAG").unwrap_or_else(|_| format!("{version}-{commit}"));
 
     let long_version = format!("{tag} ({commit}, {channel})");
 
-    println!("cargo:rustc-env=ACLAUDE_VERSION={version}");
-    println!("cargo:rustc-env=ACLAUDE_COMMIT={commit}");
-    println!("cargo:rustc-env=ACLAUDE_BUILD_TIME={build_time}");
-    println!("cargo:rustc-env=ACLAUDE_CHANNEL={channel}");
-    println!("cargo:rustc-env=ACLAUDE_TAG={tag}");
-    println!("cargo:rustc-env=ACLAUDE_LONG_VERSION={long_version}");
+    println!("cargo:rustc-env=FORESTAGE_VERSION={version}");
+    println!("cargo:rustc-env=FORESTAGE_COMMIT={commit}");
+    println!("cargo:rustc-env=FORESTAGE_BUILD_TIME={build_time}");
+    println!("cargo:rustc-env=FORESTAGE_CHANNEL={channel}");
+    println!("cargo:rustc-env=FORESTAGE_TAG={tag}");
+    println!("cargo:rustc-env=FORESTAGE_LONG_VERSION={long_version}");
 
     println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-env-changed=ACLAUDE_CHANNEL");
-    println!("cargo:rerun-if-env-changed=ACLAUDE_TAG");
+    println!("cargo:rerun-if-env-changed=FORESTAGE_CHANNEL");
+    println!("cargo:rerun-if-env-changed=FORESTAGE_TAG");
 }
 
 /// Embed all persona theme YAMLs at compile time using raw string literals.

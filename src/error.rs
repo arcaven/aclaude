@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum AclaudeError {
+pub enum ForestageError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -40,4 +40,4 @@ pub enum AclaudeError {
     Json(#[from] serde_json::Error),
 }
 
-pub type Result<T> = std::result::Result<T, AclaudeError>;
+pub type Result<T> = std::result::Result<T, ForestageError>;

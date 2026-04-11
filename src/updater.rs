@@ -7,7 +7,7 @@ use std::process::Command;
 
 use serde::Deserialize;
 
-use crate::error::{AclaudeError, Result};
+use crate::error::{ForestageError, Result};
 
 /// GitHub release metadata (subset).
 #[derive(Debug, Deserialize)]
@@ -35,8 +35,8 @@ pub enum Channel {
 impl Channel {
     pub fn binary_name(self) -> &'static str {
         match self {
-            Self::Stable => "aclaude",
-            Self::Alpha => "aclaude-a",
+            Self::Stable => "forestage",
+            Self::Alpha => "forestage-a",
         }
     }
 
@@ -48,15 +48,15 @@ impl Channel {
     }
 }
 
-/// Return the binary name the user invoked (e.g. "aclaude-a" or "aclaude").
+/// Return the binary name the user invoked (e.g. "forestage-a" or "forestage").
 pub fn binary_name() -> String {
     std::env::current_exe()
         .ok()
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-        .unwrap_or_else(|| "aclaude".to_string())
+        .unwrap_or_else(|| "forestage".to_string())
 }
 
-/// How aclaude was installed — determines update strategy.
+/// How forestage was installed — determines update strategy.
 #[derive(Debug, PartialEq, Eq)]
 pub enum InstallMethod {
     /// Installed via Homebrew (macOS). User should run `brew upgrade`.
@@ -67,26 +67,26 @@ pub enum InstallMethod {
     DirectBinary,
 }
 
-/// Version directory: ~/.local/share/aclaude/versions/{version}/
+/// Version directory: ~/.local/share/forestage/versions/{version}/
 fn versions_dir() -> PathBuf {
     crate::paths::data_dir()
         .unwrap_or_else(|| PathBuf::from("~/.local/share"))
-        .join("aclaude/versions")
+        .join("forestage/versions")
 }
 
 /// Build the HTTP client used for GitHub API and asset downloads.
 fn http_client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
-        .user_agent("aclaude-updater")
+        .user_agent("forestage-updater")
         .build()
-        .map_err(|e| AclaudeError::Update {
+        .map_err(|e| ForestageError::Update {
             message: format!("http client error: {e}"),
         })
 }
 
-/// Detect how aclaude was installed by examining the binary path.
+/// Detect how forestage was installed by examining the binary path.
 pub fn detect_install_method() -> Result<InstallMethod> {
-    let exe = env::current_exe().map_err(|e| AclaudeError::Update {
+    let exe = env::current_exe().map_err(|e| ForestageError::Update {
         message: format!("cannot determine binary path: {e}"),
     })?;
 
@@ -141,16 +141,16 @@ fn detect_linux_package_manager(binary_path: &str) -> Option<String> {
 
 /// Determine the expected asset name for the current platform.
 ///
-/// Matches the current binary name: if running as `aclaude`, downloads the
-/// stable asset (`aclaude-{os}-{arch}`). If running as `aclaude-a`, downloads
-/// the alpha asset (`aclaude-a-{os}-{arch}`).
+/// Matches the current binary name: if running as `forestage`, downloads the
+/// stable asset (`forestage-{os}-{arch}`). If running as `forestage-a`, downloads
+/// the alpha asset (`forestage-a-{os}-{arch}`).
 fn asset_name() -> Result<String> {
     let os = if cfg!(target_os = "macos") {
         "darwin"
     } else if cfg!(target_os = "linux") {
         "linux"
     } else {
-        return Err(AclaudeError::Update {
+        return Err(ForestageError::Update {
             message: format!("unsupported OS: {}", env::consts::OS),
         });
     };
@@ -159,24 +159,24 @@ fn asset_name() -> Result<String> {
         "aarch64" => "arm64",
         "x86_64" => "amd64",
         other => {
-            return Err(AclaudeError::Update {
+            return Err(ForestageError::Update {
                 message: format!("unsupported architecture: {other}"),
             });
         }
     };
 
     // Match the current binary name to download the right channel asset.
-    // If the binary is named "aclaude-a" (or "aclaude-a-*"), use alpha assets.
+    // If the binary is named "forestage-a" (or "forestage-a-*"), use alpha assets.
     // Otherwise use stable assets.
     let binary_name = env::current_exe()
         .ok()
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-        .unwrap_or_else(|| "aclaude".to_string());
+        .unwrap_or_else(|| "forestage".to_string());
 
-    let base = if binary_name.starts_with("aclaude-a") {
-        "aclaude-a"
+    let base = if binary_name.starts_with("forestage-a") {
+        "forestage-a"
     } else {
-        "aclaude"
+        "forestage"
     };
 
     Ok(format!("{base}-{os}-{arch}"))
@@ -194,13 +194,13 @@ fn channel_tag_prefix(channel: Channel) -> &'static str {
 fn fetch_releases() -> Result<Vec<GitHubRelease>> {
     let client = http_client()?;
     client
-        .get("https://api.github.com/repos/ArcavenAE/aclaude/releases")
+        .get("https://api.github.com/repos/ArcavenAE/forestage/releases")
         .send()
-        .map_err(|e| AclaudeError::Update {
+        .map_err(|e| ForestageError::Update {
             message: format!("failed to fetch releases: {e}"),
         })?
         .json()
-        .map_err(|e| AclaudeError::Update {
+        .map_err(|e| ForestageError::Update {
             message: format!("failed to parse releases: {e}"),
         })
 }
@@ -222,7 +222,7 @@ fn find_release<'a>(
         .collect();
 
     if channel_releases.is_empty() {
-        return Err(AclaudeError::Update {
+        return Err(ForestageError::Update {
             message: format!("no {channel:?} releases found"),
         });
     }
@@ -231,7 +231,7 @@ fn find_release<'a>(
         None => channel_releases
             .into_iter()
             .max_by_key(|r| r.published_at.clone())
-            .ok_or_else(|| AclaudeError::Update {
+            .ok_or_else(|| ForestageError::Update {
                 message: "no releases found".to_string(),
             }),
         Some(version) => {
@@ -245,7 +245,7 @@ fn find_release<'a>(
                 .filter(|r| r.tag_name.starts_with(version) || r.tag_name.contains(version))
                 .collect();
             match matches.len() {
-                0 => Err(AclaudeError::Update {
+                0 => Err(ForestageError::Update {
                     message: format!(
                         "no release matching '{version}'. Available: {}",
                         channel_releases
@@ -259,7 +259,7 @@ fn find_release<'a>(
                     .into_iter()
                     .max_by_key(|r| r.published_at.clone())
                     .copied()
-                    .ok_or_else(|| AclaudeError::Update {
+                    .ok_or_else(|| ForestageError::Update {
                         message: "no releases found".to_string(),
                     }),
             }
@@ -295,7 +295,7 @@ pub fn download_and_install(channel: Channel, target_version: Option<&str>) -> R
         .assets
         .iter()
         .find(|a| a.name == expected_asset)
-        .ok_or_else(|| AclaudeError::Update {
+        .ok_or_else(|| ForestageError::Update {
             message: format!(
                 "no asset named '{expected_asset}' in release {}. Available: {}",
                 release.tag_name,
@@ -309,24 +309,24 @@ pub fn download_and_install(channel: Channel, target_version: Option<&str>) -> R
         })?;
 
     // Determine current binary path
-    let current_exe = env::current_exe().map_err(|e| AclaudeError::Update {
+    let current_exe = env::current_exe().map_err(|e| ForestageError::Update {
         message: format!("cannot determine binary path: {e}"),
     })?;
 
     // Resolve symlinks to get the actual binary location
     let current_exe = current_exe
         .canonicalize()
-        .map_err(|e| AclaudeError::Update {
+        .map_err(|e| ForestageError::Update {
             message: format!("cannot resolve binary path: {e}"),
         })?;
 
-    let parent_dir = current_exe.parent().ok_or_else(|| AclaudeError::Update {
+    let parent_dir = current_exe.parent().ok_or_else(|| ForestageError::Update {
         message: "binary has no parent directory".to_string(),
     })?;
 
     // Check we can write to the directory
-    let test_path = parent_dir.join(".aclaude-update-test");
-    fs::write(&test_path, b"test").map_err(|e| AclaudeError::Update {
+    let test_path = parent_dir.join(".forestage-update-test");
+    fs::write(&test_path, b"test").map_err(|e| ForestageError::Update {
         message: format!(
             "cannot write to {}: {e}\n\nTry running with sudo, or move the binary to a user-writable location.",
             parent_dir.display()
@@ -339,14 +339,14 @@ pub fn download_and_install(channel: Channel, target_version: Option<&str>) -> R
         current_exe
             .file_name()
             .map(|n| n.to_string_lossy())
-            .unwrap_or_else(|| "aclaude".into())
+            .unwrap_or_else(|| "forestage".into())
     ));
     let old_path = parent_dir.join(format!(
         "{}.old",
         current_exe
             .file_name()
             .map(|n| n.to_string_lossy())
-            .unwrap_or_else(|| "aclaude".into())
+            .unwrap_or_else(|| "forestage".into())
     ));
 
     // Download the asset
@@ -355,12 +355,12 @@ pub fn download_and_install(channel: Channel, target_version: Option<&str>) -> R
     let response = client
         .get(&asset.browser_download_url)
         .send()
-        .map_err(|e| AclaudeError::Update {
+        .map_err(|e| ForestageError::Update {
             message: format!("download failed: {e}"),
         })?;
 
     if !response.status().is_success() {
-        return Err(AclaudeError::Update {
+        return Err(ForestageError::Update {
             message: format!(
                 "download failed with HTTP {}: {}",
                 response.status(),
@@ -369,31 +369,31 @@ pub fn download_and_install(channel: Channel, target_version: Option<&str>) -> R
         });
     }
 
-    let bytes = response.bytes().map_err(|e| AclaudeError::Update {
+    let bytes = response.bytes().map_err(|e| ForestageError::Update {
         message: format!("failed to read download body: {e}"),
     })?;
 
     if bytes.is_empty() {
-        return Err(AclaudeError::Update {
+        return Err(ForestageError::Update {
             message: "downloaded file is empty".to_string(),
         });
     }
 
     // Write to .new file
     {
-        let mut file = fs::File::create(&new_path).map_err(|e| AclaudeError::Update {
+        let mut file = fs::File::create(&new_path).map_err(|e| ForestageError::Update {
             message: format!("cannot create {}: {e}", new_path.display()),
         })?;
         file.write_all(&bytes).map_err(|e| {
             // Clean up on write failure
             let _ = fs::remove_file(&new_path);
-            AclaudeError::Update {
+            ForestageError::Update {
                 message: format!("failed to write {}: {e}", new_path.display()),
             }
         })?;
         file.flush().map_err(|e| {
             let _ = fs::remove_file(&new_path);
-            AclaudeError::Update {
+            ForestageError::Update {
                 message: format!("failed to flush {}: {e}", new_path.display()),
             }
         })?;
@@ -402,7 +402,7 @@ pub fn download_and_install(channel: Channel, target_version: Option<&str>) -> R
     // Set executable permissions (rwxr-xr-x = 0o755)
     fs::set_permissions(&new_path, fs::Permissions::from_mode(0o755)).map_err(|e| {
         let _ = fs::remove_file(&new_path);
-        AclaudeError::Update {
+        ForestageError::Update {
             message: format!("cannot set permissions on {}: {e}", new_path.display()),
         }
     })?;
@@ -415,7 +415,7 @@ pub fn download_and_install(channel: Channel, target_version: Option<&str>) -> R
     // Step 1: current -> .old
     fs::rename(&current_exe, &old_path).map_err(|e| {
         let _ = fs::remove_file(&new_path);
-        AclaudeError::Update {
+        ForestageError::Update {
             message: format!(
                 "cannot backup current binary to {}: {e}",
                 old_path.display()
@@ -428,7 +428,7 @@ pub fn download_and_install(channel: Channel, target_version: Option<&str>) -> R
         // Rollback: restore the old binary
         let _ = fs::rename(&old_path, &current_exe);
         let _ = fs::remove_file(&new_path);
-        return Err(AclaudeError::Update {
+        return Err(ForestageError::Update {
             message: format!(
                 "cannot install new binary to {}: {e}",
                 current_exe.display()
@@ -450,7 +450,7 @@ pub fn list_versions() -> Result<Vec<String>> {
     }
 
     let mut versions: Vec<String> = fs::read_dir(&dir)
-        .map_err(AclaudeError::Io)?
+        .map_err(ForestageError::Io)?
         .filter_map(std::result::Result::ok)
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .map(|e| e.file_name().to_string_lossy().to_string())
@@ -499,22 +499,22 @@ mod tests {
 
     #[test]
     fn channel_binary_name() {
-        assert_eq!(Channel::Stable.binary_name(), "aclaude");
-        assert_eq!(Channel::Alpha.binary_name(), "aclaude-a");
+        assert_eq!(Channel::Stable.binary_name(), "forestage");
+        assert_eq!(Channel::Alpha.binary_name(), "forestage-a");
     }
 
     #[test]
     fn asset_name_is_valid_format() {
         let name = asset_name().expect("should detect platform");
-        // Binary name detection: cargo test binary is "aclaude" (stable),
-        // so asset name will be aclaude-{os}-{arch}. In alpha builds
-        // named "aclaude-a", it would be aclaude-a-{os}-{arch}.
+        // Binary name detection: cargo test binary is "forestage" (stable),
+        // so asset name will be forestage-{os}-{arch}. In alpha builds
+        // named "forestage-a", it would be forestage-a-{os}-{arch}.
         assert!(
-            name.starts_with("aclaude-"),
+            name.starts_with("forestage-"),
             "unexpected asset name: {name}"
         );
         let parts: Vec<&str> = name.split('-').collect();
-        // aclaude-{os}-{arch} = 3 parts, aclaude-a-{os}-{arch} = 4 parts
+        // forestage-{os}-{arch} = 3 parts, forestage-a-{os}-{arch} = 4 parts
         assert!(
             parts.len() == 3 || parts.len() == 4,
             "expected 3 or 4 dash-separated parts: {name}"
@@ -543,8 +543,8 @@ mod tests {
             "published_at": "2026-04-01T00:00:00Z",
             "assets": [
                 {
-                    "name": "aclaude-a-darwin-arm64",
-                    "browser_download_url": "https://example.com/aclaude-a-darwin-arm64"
+                    "name": "forestage-a-darwin-arm64",
+                    "browser_download_url": "https://example.com/forestage-a-darwin-arm64"
                 }
             ]
         }"#;
@@ -552,7 +552,7 @@ mod tests {
             serde_json::from_str(json).expect("should deserialize release");
         assert_eq!(release.tag_name, "v0.1.0");
         assert_eq!(release.assets.len(), 1);
-        assert_eq!(release.assets[0].name, "aclaude-a-darwin-arm64");
+        assert_eq!(release.assets[0].name, "forestage-a-darwin-arm64");
     }
 
     #[test]
