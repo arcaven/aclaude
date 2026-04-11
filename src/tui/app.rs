@@ -129,6 +129,68 @@ pub enum ToolStatus {
     Error { message: String },
 }
 
+/// Permission mode — cycled via Shift+Tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionMode {
+    Default,
+    AcceptEdits,
+    Plan,
+    Auto,
+    Bypass,
+}
+
+impl PermissionMode {
+    /// Cycle to the next permission mode.
+    pub fn next(self) -> Self {
+        match self {
+            Self::Default => Self::AcceptEdits,
+            Self::AcceptEdits => Self::Plan,
+            Self::Plan => Self::Auto,
+            Self::Auto => Self::Bypass,
+            Self::Bypass => Self::Default,
+        }
+    }
+
+    /// Display label for the status bar.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::AcceptEdits => "acceptEdits",
+            Self::Plan => "plan",
+            Self::Auto => "auto",
+            Self::Bypass => "bypass",
+        }
+    }
+
+    /// Color for the status bar indicator.
+    pub fn color(self) -> Color {
+        match self {
+            Self::Default => Color::Green,
+            Self::AcceptEdits | Self::Plan => Color::Yellow,
+            Self::Auto => Color::Cyan,
+            Self::Bypass => Color::Red,
+        }
+    }
+
+    /// Parse from system/init permission_mode value.
+    pub fn parse_mode(s: &str) -> Self {
+        match s {
+            "acceptEdits" => Self::AcceptEdits,
+            "plan" => Self::Plan,
+            "auto" => Self::Auto,
+            "dontAsk" | "bypass" | "bypassPermissions" => Self::Bypass,
+            _ => Self::Default,
+        }
+    }
+}
+
+/// A pending permission prompt for tool approval.
+#[derive(Debug)]
+pub struct PermissionPrompt {
+    pub tool: String,
+    pub description: String,
+}
+
 // ── App State ────────────────────────────────────────────────────────────
 
 /// Application state for the TUI.
@@ -153,6 +215,10 @@ pub struct AppState {
     pub show_thinking: bool,
     /// Frame counter for spinner animation.
     pub frame_count: u64,
+    /// Current permission mode.
+    pub permission_mode: PermissionMode,
+    /// Pending permission prompt (blocks normal input when Some).
+    pub pending_permission: Option<PermissionPrompt>,
 }
 
 impl AppState {
@@ -168,6 +234,8 @@ impl AppState {
             available_slash_commands: Vec::new(),
             show_thinking: false,
             frame_count: 0,
+            permission_mode: PermissionMode::Default,
+            pending_permission: None,
         }
     }
 
@@ -176,10 +244,12 @@ impl AppState {
         match event {
             BridgeEvent::SessionInit {
                 available_slash_commands,
+                permission_mode,
                 ..
             } => {
                 self.status = AppStatus::Ready;
                 self.available_slash_commands = available_slash_commands.clone();
+                self.permission_mode = PermissionMode::parse_mode(permission_mode);
             }
             BridgeEvent::Core(ClaudeEvent::System { .. }) => {
                 // Legacy system event without init subtype
@@ -308,7 +378,10 @@ impl AppState {
                 self.status_message = Some(format!("Rate limit: {status}"));
             }
             BridgeEvent::PermissionRequest { tool, description } => {
-                self.status_message = Some(format!("Permission requested: {tool} — {description}"));
+                self.pending_permission = Some(PermissionPrompt {
+                    tool: tool.clone(),
+                    description: description.clone(),
+                });
             }
             _ => {}
         }
@@ -743,6 +816,13 @@ pub fn render_status(frame: &mut Frame, state: &AppState, area: Rect) {
         ));
     }
 
+    // Permission mode
+    parts.push(Span::raw(" │ "));
+    parts.push(Span::styled(
+        format!("[{}]", state.permission_mode.label()),
+        Style::default().fg(state.permission_mode.color()),
+    ));
+
     // Active tool
     if let Some(tool) = &m.active_tool {
         parts.push(Span::raw(" │ "));
@@ -780,4 +860,49 @@ pub fn render_status(frame: &mut Frame, state: &AppState, area: Rect) {
 
     let status = Paragraph::new(Line::from(parts));
     frame.render_widget(status, area);
+}
+
+/// Render the permission prompt overlay above the input area.
+pub fn render_permission_prompt(frame: &mut Frame, prompt: &PermissionPrompt, area: Rect) {
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("  Tool: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                prompt.tool.clone(),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(Span::styled(
+            format!("  {}", prompt.description),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(
+                "  [a] Allow  ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "[d] Deny",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+    ];
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Permission Required ")
+        .title_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let paragraph = Paragraph::new(lines).block(block);
+    frame.render_widget(paragraph, area);
 }

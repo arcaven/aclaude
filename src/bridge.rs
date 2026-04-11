@@ -153,6 +153,33 @@ impl Session {
             })
     }
 
+    /// Send a permission response (allow/deny) to the subprocess.
+    ///
+    /// The hook event protocol expects a JSON response on stdin.
+    pub async fn send_permission_response(&self, allowed: bool) -> Result<()> {
+        let behavior = if allowed { "allow" } else { "deny" };
+        let msg = serde_json::json!({
+            "type": "permission_response",
+            "permission_response": {
+                "behavior": behavior
+            }
+        });
+        let line = format!(
+            "{}\n",
+            serde_json::to_string(&msg).map_err(|e| {
+                AclaudeError::Session {
+                    message: format!("failed to serialize permission response: {e}"),
+                }
+            })?
+        );
+        self.stdin_tx
+            .send(line)
+            .await
+            .map_err(|_| AclaudeError::Session {
+                message: "subprocess stdin closed".to_string(),
+            })
+    }
+
     /// Gracefully shut down the subprocess.
     pub async fn shutdown(&mut self) {
         let _ = self.child.kill().await;

@@ -29,6 +29,12 @@ pub enum InputAction {
     ScrollEnd,
     /// Toggle expanded output for most recent completed tool call.
     ToggleExpand,
+    /// Cycle permission mode (Shift+Tab).
+    CyclePermissionMode,
+    /// Allow pending permission request.
+    PermissionAllow,
+    /// Deny pending permission request.
+    PermissionDeny,
     /// No action (key consumed but no effect).
     None,
 }
@@ -194,19 +200,27 @@ fn longest_common_prefix(strings: &[&str]) -> String {
 
 /// Handle a key event against the current input buffer and history.
 ///
-/// Modifies `input_buffer` in place (for character input, backspace, history, tab).
-/// Returns an `InputAction` describing what the TUI should do.
+/// When `has_permission_prompt` is true, `a` and `d` keys are intercepted
+/// for permission allow/deny before normal character input.
 pub fn handle_key(
     event: KeyEvent,
     input_buffer: &mut String,
     history: &mut InputHistory,
+    has_permission_prompt: bool,
 ) -> InputAction {
     match (event.modifiers, event.code) {
-        // Quit
+        // Quit (always available)
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => InputAction::Quit,
 
         // Toggle expand tool output
         (KeyModifiers::CONTROL, KeyCode::Char('o')) => InputAction::ToggleExpand,
+
+        // Cycle permission mode (Shift+Tab)
+        (KeyModifiers::SHIFT, KeyCode::BackTab) => InputAction::CyclePermissionMode,
+
+        // Permission prompt keys (when active, intercept before normal input)
+        (_, KeyCode::Char('a')) if has_permission_prompt => InputAction::PermissionAllow,
+        (_, KeyCode::Char('d')) if has_permission_prompt => InputAction::PermissionDeny,
 
         // Tab completion
         (_, KeyCode::Tab) => {

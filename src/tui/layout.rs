@@ -7,6 +7,11 @@
 //! │                          │  (overlay) │ │
 //! │                          └────────────┘ │
 //! │                                         │
+//! ├─────────────────────────────────────────┤  ← optional permission prompt
+//! │ ┌─ Permission Required ───────────────┐ │
+//! │ │  Tool: Edit                         │ │
+//! │ │  [a] Allow  [d] Deny               │ │
+//! │ └────────────────────────────────────-┘ │
 //! ├─────────────────────────────────────────┤
 //! │ > INPUT AREA                            │
 //! ├─────────────────────────────────────────┤
@@ -27,12 +32,17 @@ const INPUT_HEIGHT: u16 = 3;
 /// Status bar height in rows.
 const STATUS_HEIGHT: u16 = 1;
 
+/// Permission prompt height in rows (when active).
+const PERMISSION_HEIGHT: u16 = 6;
+
 /// Computed layout areas for a single frame.
 pub struct TuiLayout {
     /// Conversation viewport (scrollable text, full width).
     pub conversation: Rect,
     /// Portrait overlay area (upper-right of conversation, may be zero-size).
     pub portrait: Rect,
+    /// Permission prompt area (above input, zero-size when no prompt active).
+    pub permission_prompt: Rect,
     /// User input area.
     pub input: Rect,
     /// Status bar.
@@ -40,29 +50,42 @@ pub struct TuiLayout {
 }
 
 /// Compute layout for the given terminal size and portrait configuration.
-///
-/// The conversation viewport gets full width. The portrait is an overlay
-/// in the upper-right corner of the conversation area — it renders on top
-/// of the text, not beside it.
-pub fn compute_layout(area: Rect, portrait_size: PortraitSize, has_portrait: bool) -> TuiLayout {
-    // Vertical split: conversation | input | status
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(1),                // conversation (full width)
+pub fn compute_layout(
+    area: Rect,
+    portrait_size: PortraitSize,
+    has_portrait: bool,
+    has_permission_prompt: bool,
+) -> TuiLayout {
+    // Build constraints based on whether permission prompt is active
+    let constraints = if has_permission_prompt {
+        vec![
+            Constraint::Min(1),                    // conversation
+            Constraint::Length(PERMISSION_HEIGHT), // permission prompt
+            Constraint::Length(INPUT_HEIGHT),      // input
+            Constraint::Length(STATUS_HEIGHT),     // status
+        ]
+    } else {
+        vec![
+            Constraint::Min(1),                // conversation
             Constraint::Length(INPUT_HEIGHT),  // input
             Constraint::Length(STATUS_HEIGHT), // status
-        ])
+        ]
+    };
+
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
         .split(area);
 
-    let conversation = vertical[0];
-    let input = vertical[1];
-    let status = vertical[2];
+    let (conversation, permission_prompt, input, status) = if has_permission_prompt {
+        (vertical[0], vertical[1], vertical[2], vertical[3])
+    } else {
+        (vertical[0], Rect::default(), vertical[1], vertical[2])
+    };
 
     // Portrait is an overlay in the upper-right corner of the conversation area
     let portrait = if has_portrait && area.width >= MIN_WIDTH_FOR_PORTRAIT {
         let pw = portrait_column_width(portrait_size, area.width);
-        // Height: roughly match aspect ratio, cap at half the conversation height
         let ph = (pw * 3 / 4).min(conversation.height / 2).max(4);
         Rect {
             x: conversation.x + conversation.width.saturating_sub(pw),
@@ -77,6 +100,7 @@ pub fn compute_layout(area: Rect, portrait_size: PortraitSize, has_portrait: boo
     TuiLayout {
         conversation,
         portrait,
+        permission_prompt,
         input,
         status,
     }

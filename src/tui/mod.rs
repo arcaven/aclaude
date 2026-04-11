@@ -35,10 +35,6 @@ use crate::portrait;
 use crate::protocol_ext::BridgeEvent;
 
 /// Text batcher — buffers streaming text deltas for smooth rendering.
-///
-/// Coalesces consecutive TextDelta events and flushes on a 45ms timer
-/// or 2KB size threshold. Prevents per-token re-renders at 20fps.
-/// Pattern from pi_agent_rust's UiStreamDeltaBatcher.
 struct TextBatcher {
     buffer: String,
     last_flush: Instant,
@@ -52,7 +48,6 @@ impl TextBatcher {
         }
     }
 
-    /// Push a text delta. Returns the flushed text if threshold met.
     fn push(&mut self, text: &str) -> Option<String> {
         self.buffer.push_str(text);
         if self.buffer.len() >= 2048 || self.last_flush.elapsed() >= Duration::from_millis(45) {
@@ -62,7 +57,6 @@ impl TextBatcher {
         }
     }
 
-    /// Force flush any remaining buffer.
     fn flush(&mut self) -> Option<String> {
         if self.buffer.is_empty() {
             return None;
@@ -85,7 +79,6 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
         message: format!("failed to enable raw mode: {e}"),
     })?;
 
-    // Portrait widget (queries terminal capabilities via stdio)
     let mut portrait_widget = PortraitWidget::new();
     if let Some(pw) = &mut portrait_widget {
         pw.set_size(PortraitSize::Medium, &portrait_paths);
@@ -132,24 +125,21 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
     // Event loop
     let result = loop {
         tokio::select! {
-            // Bridge events (NDJSON from subprocess)
+            // Bridge events
             bridge_event = session.event_rx().recv() => {
                 match bridge_event {
                     Some(BridgeEvent::TextDelta { text }) => {
-                        // Buffer text deltas — flush on threshold
                         if let Some(flushed) = text_batcher.push(&text) {
                             state.apply_event(&BridgeEvent::TextDelta { text: flushed });
                         }
                     }
                     Some(event) => {
-                        // Non-text events flush the batcher immediately
                         if let Some(flushed) = text_batcher.flush() {
                             state.apply_event(&BridgeEvent::TextDelta { text: flushed });
                         }
                         state.apply_event(&event);
                     }
                     None => {
-                        // Subprocess exited — flush remaining
                         if let Some(flushed) = text_batcher.flush() {
                             state.apply_event(&BridgeEvent::TextDelta { text: flushed });
                         }
@@ -158,28 +148,27 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                 }
             }
 
-            // Terminal events (keyboard input)
+            // Terminal events
             term_event = term_rx.recv() => {
                 match term_event {
                     Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
-                        // Gate input by status — only Ready accepts typed input
-                        // (Ctrl+C and slash commands always work)
-                        let action = handle_key(key, &mut state.input_buffer, &mut history);
+                        let has_perm = state.pending_permission.is_some();
+                        let action = handle_key(key, &mut state.input_buffer, &mut history, has_perm);
                         match action {
                             InputAction::Quit => break Ok(()),
+
                             InputAction::SendMessage(text) if state.status.accepts_input() => {
                                 state.record_user_message(text.clone());
                                 if let Err(e) = session.send_user_message(&text).await {
                                     state.status_message = Some(format!("Send error: {e}"));
                                 }
                             }
-                            InputAction::SendMessage(_) => {
-                                // Input not accepted in current state
-                            }
+                            InputAction::SendMessage(_) => {}
+
                             InputAction::SlashCommand(SlashCmd::Exit) => break Ok(()),
                             InputAction::SlashCommand(SlashCmd::Login) => {
                                 state.status_message = Some(
-                                    "Auth is managed by Claude Code. Run `claude login` in a separate terminal to re-authenticate.".to_string()
+                                    "Auth is managed by Claude Code. Run `claude login` in a separate terminal.".to_string()
                                 );
                             }
                             InputAction::SlashCommand(SlashCmd::PortraitSize(size_str)) => {
@@ -193,6 +182,30 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                             InputAction::SlashCommand(SlashCmd::Unknown(cmd)) => {
                                 state.status_message = Some(format!("Unknown command: {cmd}"));
                             }
+
+                            InputAction::CyclePermissionMode => {
+                                state.permission_mode = state.permission_mode.next();
+                                state.status_message = Some(format!(
+                                    "Permission mode: {}",
+                                    state.permission_mode.label()
+                                ));
+                            }
+
+                            InputAction::PermissionAllow => {
+                                state.pending_permission = None;
+                                state.status_message = Some("Permission: allowed".to_string());
+                                if let Err(e) = session.send_permission_response(true).await {
+                                    state.status_message = Some(format!("Send error: {e}"));
+                                }
+                            }
+                            InputAction::PermissionDeny => {
+                                state.pending_permission = None;
+                                state.status_message = Some("Permission: denied".to_string());
+                                if let Err(e) = session.send_permission_response(false).await {
+                                    state.status_message = Some(format!("Send error: {e}"));
+                                }
+                            }
+
                             InputAction::ToggleExpand => state.toggle_last_tool_expand(),
                             InputAction::PageUp => state.scroll.page_up(),
                             InputAction::PageDown => state.scroll.page_down(),
@@ -200,17 +213,14 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                             InputAction::None => {}
                         }
                     }
-                    Some(Event::Resize(_, _)) => {
-                        // Terminal resized — next draw picks up new size
-                    }
+                    Some(Event::Resize(_, _)) => {}
                     Some(_) => {}
                     None => break Ok(()),
                 }
             }
 
-            // Tick — render frame + flush batcher on timer
+            // Tick — render frame
             _ = tick.tick() => {
-                // Flush any buffered text on tick (45ms timer threshold)
                 if let Some(flushed) = text_batcher.flush() {
                     state.apply_event(&BridgeEvent::TextDelta { text: flushed });
                 }
@@ -218,16 +228,23 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                 state.frame_count += 1;
 
                 let has_portrait = portrait_widget.as_ref().is_some_and(portrait_widget::PortraitWidget::has_image);
+                let has_perm_prompt = state.pending_permission.is_some();
+
                 terminal.draw(|frame| {
                     let tui_layout = compute_layout(
                         frame.area(),
                         state.portrait_size,
                         has_portrait,
+                        has_perm_prompt,
                     );
 
                     app::render_conversation(frame, &mut state, tui_layout.conversation);
                     if let Some(pw) = &mut portrait_widget {
                         pw.render(frame, tui_layout.portrait);
+                    }
+
+                    if let Some(prompt) = &state.pending_permission {
+                        app::render_permission_prompt(frame, prompt, tui_layout.permission_prompt);
                     }
 
                     app::render_input(frame, &state, tui_layout.input);
