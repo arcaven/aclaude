@@ -216,8 +216,8 @@ pub struct PermissionPrompt {
 pub struct AppState {
     /// Structured conversation history.
     pub items: Vec<ConversationItem>,
-    /// User input buffer.
-    pub input_buffer: String,
+    /// User input state (buffer + cursor).
+    pub input: super::input::InputState,
     /// Portrait size setting.
     pub portrait_size: PortraitSize,
     /// Whether the portrait is visible.
@@ -250,7 +250,7 @@ impl AppState {
     pub fn new(metrics: Arc<Mutex<SessionMetrics>>) -> Self {
         Self {
             items: Vec::new(),
-            input_buffer: String::new(),
+            input: super::input::InputState::default(),
             portrait_size: PortraitSize::Medium,
             portrait_visible: true,
             portrait_position: PortraitPosition::TopRight,
@@ -780,11 +780,11 @@ pub fn render_input(frame: &mut Frame, state: &AppState, area: Rect) {
         AppStatus::Error => "Error — press Ctrl+C to exit",
     };
 
-    let display_text = if state.input_buffer.is_empty() {
+    let display_text = if state.input.buffer.is_empty() {
         Span::styled(placeholder, Style::default().fg(Color::DarkGray))
     } else {
         Span::styled(
-            state.input_buffer.as_str(),
+            state.input.buffer.as_str(),
             Style::default().fg(Color::White),
         )
     };
@@ -797,8 +797,9 @@ pub fn render_input(frame: &mut Frame, state: &AppState, area: Rect) {
 
     frame.render_widget(input, area);
 
-    // Cursor
-    let cursor_x = area.x + 2 + state.input_buffer.len() as u16;
+    // Position cursor at the InputState cursor position
+    // +1 for top border, +2 for "> " prefix
+    let cursor_x = area.x + 2 + state.input.cursor as u16;
     let cursor_y = area.y + 1;
     frame.set_cursor_position((cursor_x.min(area.x + area.width - 1), cursor_y));
 }

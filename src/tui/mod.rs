@@ -14,7 +14,9 @@ pub mod scroll;
 use std::io;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind, MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -84,7 +86,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
         pw.set_size(PortraitSize::Medium, &portrait_paths);
     }
 
-    execute!(io::stdout(), EnterAlternateScreen).map_err(|e| {
+    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).map_err(|e| {
         let _ = disable_raw_mode();
         crate::error::AclaudeError::Session {
             message: format!("failed to enter alternate screen: {e}"),
@@ -155,7 +157,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                         let has_perm = state.pending_permission.is_some();
                         let action = handle_key(
                             key,
-                            &mut state.input_buffer,
+                            &mut state.input,
                             &mut history,
                             has_perm,
                             &state.available_slash_commands,
@@ -263,10 +265,32 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                             }
 
                             InputAction::ToggleExpand => state.toggle_last_tool_expand(),
+                            InputAction::ToggleThinking => {
+                                state.show_thinking = !state.show_thinking;
+                                state.set_status(format!(
+                                    "Thinking blocks: {}",
+                                    if state.show_thinking { "shown" } else { "hidden" }
+                                ));
+                            }
+                            InputAction::OpenEditor => {
+                                // Stub — full implementation in a later pass
+                                state.set_status(
+                                    "External editor not yet implemented. Use Ctrl+U to clear input.".to_string()
+                                );
+                            }
+                            InputAction::ScrollUp => state.scroll.scroll_up(),
+                            InputAction::ScrollDown => state.scroll.scroll_down(),
                             InputAction::PageUp => state.scroll.page_up(),
                             InputAction::PageDown => state.scroll.page_down(),
                             InputAction::ScrollEnd => state.scroll.scroll_to_bottom(),
                             InputAction::None => {}
+                        }
+                    }
+                    Some(Event::Mouse(mouse)) => {
+                        match mouse.kind {
+                            MouseEventKind::ScrollUp => state.scroll.scroll_up(),
+                            MouseEventKind::ScrollDown => state.scroll.scroll_down(),
+                            _ => {}
                         }
                     }
                     Some(Event::Resize(_, _)) => {}
@@ -315,7 +339,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
 
     // Cleanup
     session.shutdown().await;
-    let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
     let _ = disable_raw_mode();
 
     result

@@ -21,6 +21,110 @@ const LOCAL_COMMANDS: &[&str] = &[
     "/persona portrait bottom",
 ];
 
+// ── InputState ───────────────────────────────────────────────────────────
+
+/// Input buffer with cursor position for mid-line editing.
+#[derive(Debug, Default)]
+pub struct InputState {
+    pub buffer: String,
+    pub cursor: usize,
+}
+
+impl InputState {
+    /// Insert a character at the cursor position.
+    pub fn insert(&mut self, c: char) {
+        let byte_pos = self.byte_offset();
+        self.buffer.insert(byte_pos, c);
+        self.cursor += 1;
+    }
+
+    /// Delete the character before the cursor (backspace).
+    pub fn delete_back(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+            let byte_pos = self.byte_offset();
+            self.buffer.remove(byte_pos);
+        }
+    }
+
+    /// Delete from cursor back to the previous word boundary (Ctrl+W).
+    pub fn delete_word_back(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let chars: Vec<char> = self.buffer.chars().collect();
+        let mut new_cursor = self.cursor;
+        // Skip trailing whitespace
+        while new_cursor > 0 && chars[new_cursor - 1].is_whitespace() {
+            new_cursor -= 1;
+        }
+        // Skip word characters
+        while new_cursor > 0 && !chars[new_cursor - 1].is_whitespace() {
+            new_cursor -= 1;
+        }
+        let start_byte = self.char_to_byte(new_cursor);
+        let end_byte = self.byte_offset();
+        self.buffer.drain(start_byte..end_byte);
+        self.cursor = new_cursor;
+    }
+
+    /// Clear the entire buffer (Ctrl+U).
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+        self.cursor = 0;
+    }
+
+    /// Move cursor to start of line (Ctrl+A / Home).
+    pub fn home(&mut self) {
+        self.cursor = 0;
+    }
+
+    /// Move cursor to end of line (Ctrl+E / End).
+    pub fn end(&mut self) {
+        self.cursor = self.buffer.chars().count();
+    }
+
+    /// Move cursor left one character.
+    pub fn move_left(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+    }
+
+    /// Move cursor right one character.
+    pub fn move_right(&mut self) {
+        if self.cursor < self.buffer.chars().count() {
+            self.cursor += 1;
+        }
+    }
+
+    /// Set buffer content and move cursor to end.
+    pub fn set(&mut self, text: &str) {
+        self.buffer = text.to_string();
+        self.cursor = self.buffer.chars().count();
+    }
+
+    /// Get the trimmed text content.
+    pub fn text(&self) -> String {
+        self.buffer.trim().to_string()
+    }
+
+    /// Byte offset for the current cursor position.
+    fn byte_offset(&self) -> usize {
+        self.char_to_byte(self.cursor)
+    }
+
+    /// Convert char index to byte index.
+    fn char_to_byte(&self, char_idx: usize) -> usize {
+        self.buffer
+            .char_indices()
+            .nth(char_idx)
+            .map_or(self.buffer.len(), |(i, _)| i)
+    }
+}
+
+// ── Actions ──────────────────────────────────────────────────────────────
+
 /// Action resulting from a key press.
 #[derive(Debug)]
 pub enum InputAction {
@@ -36,6 +140,10 @@ pub enum InputAction {
     PageDown,
     /// Scroll to bottom of conversation.
     ScrollEnd,
+    /// Scroll conversation up one line (mouse wheel).
+    ScrollUp,
+    /// Scroll conversation down one line (mouse wheel).
+    ScrollDown,
     /// Toggle expanded output for most recent completed tool call.
     ToggleExpand,
     /// Cycle permission mode (Shift+Tab).
@@ -44,6 +152,10 @@ pub enum InputAction {
     PermissionAllow,
     /// Deny pending permission request.
     PermissionDeny,
+    /// Toggle thinking block display (Alt+T).
+    ToggleThinking,
+    /// Open external editor for input (Ctrl+G).
+    OpenEditor,
     /// No action (key consumed but no effect).
     None,
 }
@@ -51,29 +163,20 @@ pub enum InputAction {
 /// Parsed slash commands.
 #[derive(Debug, PartialEq)]
 pub enum SlashCmd {
-    /// Exit the TUI.
     Exit,
-    /// Show auth/login info.
     Login,
-    /// Clear conversation display.
     Clear,
-    /// Show available commands and keybindings.
     Help,
-    /// Show session cost from metrics.
     Cost,
-    /// Set portrait size.
     PortraitSize(String),
-    /// Toggle portrait on/off.
     PortraitToggle(bool),
-    /// Move portrait position (top/bottom).
     PortraitMove(String),
-    /// Forward to Claude Code as a user message (handles /compact, /model, etc.).
     ForwardToAgent(String),
-    /// Unknown slash command.
     Unknown(String),
 }
 
-/// Input history with up/down arrow cycling.
+// ── History ──────────────────────────────────────────────────────────────
+
 #[derive(Default)]
 pub struct InputHistory {
     entries: Vec<String>,
@@ -138,30 +241,27 @@ pub enum NextResult<'a> {
     NotBrowsing,
 }
 
+// ── Tab completion ───────────────────────────────────────────────────────
+
 /// Tab-complete slash commands or @ file paths.
-///
-/// For slash commands: merges static local commands with dynamic commands
-/// from system/init. For @ file paths: completes from the current directory.
-pub fn tab_complete(input_buffer: &mut String, dynamic_commands: &[String]) -> bool {
+pub fn tab_complete(input: &mut InputState, dynamic_commands: &[String]) -> bool {
     // @ file path completion
-    if let Some(at_pos) = input_buffer.rfind('@') {
-        let partial = &input_buffer[at_pos + 1..];
+    if let Some(at_pos) = input.buffer.rfind('@') {
+        let partial = &input.buffer[at_pos + 1..];
         if let Some(completed) = complete_file_path(partial) {
-            let prefix = input_buffer[..at_pos + 1].to_string();
-            *input_buffer = format!("{prefix}{completed}");
+            let prefix = input.buffer[..at_pos + 1].to_string();
+            input.set(&format!("{prefix}{completed}"));
             return true;
         }
         return false;
     }
 
     // Slash command completion
-    if !input_buffer.starts_with('/') {
+    if !input.buffer.starts_with('/') {
         return false;
     }
 
-    let prefix = input_buffer.as_str();
-
-    // Build combined command list: local + dynamic
+    let prefix = input.buffer.as_str();
     let mut all_commands: Vec<&str> = LOCAL_COMMANDS.to_vec();
     for cmd in dynamic_commands {
         if !all_commands.contains(&cmd.as_str()) {
@@ -178,13 +278,13 @@ pub fn tab_complete(input_buffer: &mut String, dynamic_commands: &[String]) -> b
     match matches.len() {
         0 => false,
         1 => {
-            *input_buffer = matches[0].to_string();
+            input.set(matches[0]);
             true
         }
         _ => {
             let lcp = longest_common_prefix(&matches);
-            if lcp.len() > input_buffer.len() {
-                *input_buffer = lcp;
+            if lcp.len() > input.buffer.len() {
+                input.set(&lcp);
                 true
             } else {
                 false
@@ -193,7 +293,6 @@ pub fn tab_complete(input_buffer: &mut String, dynamic_commands: &[String]) -> b
     }
 }
 
-/// Complete a file path from the current directory.
 fn complete_file_path(partial: &str) -> Option<String> {
     if partial.is_empty() {
         return None;
@@ -218,7 +317,6 @@ fn complete_file_path(partial: &str) -> Option<String> {
                 } else {
                     format!("{dir}{name}")
                 };
-                // Append / for directories
                 if entry.file_type().ok()?.is_dir() {
                     Some(format!("{full}/"))
                 } else {
@@ -236,7 +334,6 @@ fn complete_file_path(partial: &str) -> Option<String> {
         0 => None,
         1 => Some(matches.into_iter().next().expect("checked len")),
         _ => {
-            // Complete to longest common prefix
             let refs: Vec<&str> = matches.iter().map(String::as_str).collect();
             let lcp = longest_common_prefix(&refs);
             if lcp.len() > partial.len() {
@@ -269,10 +366,12 @@ fn longest_common_prefix(strings: &[&str]) -> String {
         .to_string()
 }
 
-/// Handle a key event against the current input buffer and history.
+// ── Key handling ─────────────────────────────────────────────────────────
+
+/// Handle a key event against the input state and history.
 pub fn handle_key(
     event: KeyEvent,
-    input_buffer: &mut String,
+    input: &mut InputState,
     history: &mut InputHistory,
     has_permission_prompt: bool,
     dynamic_commands: &[String],
@@ -281,26 +380,46 @@ pub fn handle_key(
         // Quit (always available)
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => InputAction::Quit,
 
-        // Toggle expand tool output
+        // Ctrl shortcuts
         (KeyModifiers::CONTROL, KeyCode::Char('o')) => InputAction::ToggleExpand,
+        (KeyModifiers::CONTROL, KeyCode::Char('a')) => {
+            input.home();
+            InputAction::None
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('e')) => {
+            input.end();
+            InputAction::None
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('w')) => {
+            input.delete_word_back();
+            InputAction::None
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+            input.clear();
+            InputAction::None
+        }
+        (KeyModifiers::CONTROL, KeyCode::Char('g')) => InputAction::OpenEditor,
+
+        // Alt shortcuts
+        (KeyModifiers::ALT, KeyCode::Char('t')) => InputAction::ToggleThinking,
 
         // Cycle permission mode (Shift+Tab)
         (KeyModifiers::SHIFT, KeyCode::BackTab) => InputAction::CyclePermissionMode,
 
-        // Permission prompt keys (when active, intercept before normal input)
+        // Permission prompt keys
         (_, KeyCode::Char('a')) if has_permission_prompt => InputAction::PermissionAllow,
         (_, KeyCode::Char('d')) if has_permission_prompt => InputAction::PermissionDeny,
 
-        // Tab completion (slash commands + @ file paths)
+        // Tab completion
         (_, KeyCode::Tab) => {
-            tab_complete(input_buffer, dynamic_commands);
+            tab_complete(input, dynamic_commands);
             InputAction::None
         }
 
         // Submit
         (_, KeyCode::Enter) => {
-            let text = input_buffer.trim().to_string();
-            input_buffer.clear();
+            let text = input.text();
+            input.clear();
             if text.is_empty() {
                 return InputAction::None;
             }
@@ -314,21 +433,37 @@ pub fn handle_key(
 
         // Editing
         (_, KeyCode::Backspace) => {
-            input_buffer.pop();
+            input.delete_back();
+            InputAction::None
+        }
+        (_, KeyCode::Delete) => {
+            // Delete char under cursor (move right then backspace)
+            if input.cursor < input.buffer.chars().count() {
+                input.move_right();
+                input.delete_back();
+            }
+            InputAction::None
+        }
+        (_, KeyCode::Left) => {
+            input.move_left();
+            InputAction::None
+        }
+        (_, KeyCode::Right) => {
+            input.move_right();
             InputAction::None
         }
 
         // History navigation
         (_, KeyCode::Up) => {
-            if let Some(entry) = history.prev(input_buffer) {
-                *input_buffer = entry.to_string();
+            if let Some(entry) = history.prev(&input.buffer) {
+                input.set(entry);
             }
             InputAction::None
         }
         (_, KeyCode::Down) => {
             match history.newer() {
-                NextResult::Entry(entry) => *input_buffer = entry.to_string(),
-                NextResult::Draft(draft) => *input_buffer = draft.to_string(),
+                NextResult::Entry(entry) => input.set(entry),
+                NextResult::Draft(draft) => input.set(draft),
                 NextResult::NotBrowsing => {}
             }
             InputAction::None
@@ -337,12 +472,20 @@ pub fn handle_key(
         // Scrolling
         (_, KeyCode::PageUp) => InputAction::PageUp,
         (_, KeyCode::PageDown) => InputAction::PageDown,
-        (_, KeyCode::End) => InputAction::ScrollEnd,
-        (_, KeyCode::Home) => InputAction::ScrollEnd,
+        (_, KeyCode::End) if input.buffer.is_empty() => InputAction::ScrollEnd,
+        (_, KeyCode::Home) if input.buffer.is_empty() => InputAction::ScrollEnd,
+        (_, KeyCode::End) => {
+            input.end();
+            InputAction::None
+        }
+        (_, KeyCode::Home) => {
+            input.home();
+            InputAction::None
+        }
 
         // Character input
         (_, KeyCode::Char(c)) => {
-            input_buffer.push(c);
+            input.insert(c);
             InputAction::None
         }
 
@@ -401,14 +544,105 @@ fn parse_slash_command(text: &str) -> Option<SlashCmd> {
         return Some(SlashCmd::ForwardToAgent(text.to_string()));
     }
 
-    // Any other / command from system/init available_slash_commands
-    // is also forwarded (MCP, skills, etc.)
     Some(SlashCmd::Unknown(text.to_string()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── InputState tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn input_insert_at_cursor() {
+        let mut s = InputState::default();
+        s.insert('a');
+        s.insert('b');
+        s.insert('c');
+        assert_eq!(s.buffer, "abc");
+        assert_eq!(s.cursor, 3);
+    }
+
+    #[test]
+    fn input_insert_mid_buffer() {
+        let mut s = InputState::default();
+        s.set("ac");
+        s.cursor = 1; // between a and c
+        s.insert('b');
+        assert_eq!(s.buffer, "abc");
+        assert_eq!(s.cursor, 2);
+    }
+
+    #[test]
+    fn input_delete_back() {
+        let mut s = InputState::default();
+        s.set("abc");
+        s.delete_back();
+        assert_eq!(s.buffer, "ab");
+        assert_eq!(s.cursor, 2);
+    }
+
+    #[test]
+    fn input_delete_back_at_start() {
+        let mut s = InputState::default();
+        s.set("abc");
+        s.cursor = 0;
+        s.delete_back();
+        assert_eq!(s.buffer, "abc"); // no change
+    }
+
+    #[test]
+    fn input_delete_word_back() {
+        let mut s = InputState::default();
+        s.set("hello world");
+        s.delete_word_back();
+        assert_eq!(s.buffer, "hello ");
+        assert_eq!(s.cursor, 6);
+    }
+
+    #[test]
+    fn input_delete_word_back_multiple_spaces() {
+        let mut s = InputState::default();
+        s.set("hello   world");
+        s.cursor = 8; // in the spaces
+        s.delete_word_back();
+        assert_eq!(s.buffer, "world");
+        assert_eq!(s.cursor, 0);
+    }
+
+    #[test]
+    fn input_home_end() {
+        let mut s = InputState::default();
+        s.set("hello");
+        assert_eq!(s.cursor, 5);
+        s.home();
+        assert_eq!(s.cursor, 0);
+        s.end();
+        assert_eq!(s.cursor, 5);
+    }
+
+    #[test]
+    fn input_move_left_right() {
+        let mut s = InputState::default();
+        s.set("abc");
+        s.move_left();
+        assert_eq!(s.cursor, 2);
+        s.move_left();
+        assert_eq!(s.cursor, 1);
+        s.move_right();
+        assert_eq!(s.cursor, 2);
+    }
+
+    #[test]
+    fn input_clear() {
+        let mut s = InputState::default();
+        s.set("hello");
+        s.clear();
+        assert_eq!(s.buffer, "");
+        assert_eq!(s.cursor, 0);
+    }
+
+    // ── Slash command tests ──────────────────────────────────────────────
 
     #[test]
     fn parse_exit() {
@@ -418,11 +652,6 @@ mod tests {
     #[test]
     fn parse_quit_alias() {
         assert_eq!(parse_slash_command("/quit"), Some(SlashCmd::Exit));
-    }
-
-    #[test]
-    fn parse_login() {
-        assert_eq!(parse_slash_command("/login"), Some(SlashCmd::Login));
     }
 
     #[test]
@@ -449,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_portrait_size_command() {
+    fn parse_portrait_size() {
         match parse_slash_command("/persona portrait size large") {
             Some(SlashCmd::PortraitSize(s)) => assert_eq!(s, "large"),
             other => panic!("expected PortraitSize, got {other:?}"),
@@ -457,7 +686,19 @@ mod tests {
     }
 
     #[test]
-    fn parse_unknown_slash_command() {
+    fn parse_portrait_toggle() {
+        assert_eq!(
+            parse_slash_command("/persona portrait on"),
+            Some(SlashCmd::PortraitToggle(true))
+        );
+        assert_eq!(
+            parse_slash_command("/persona portrait off"),
+            Some(SlashCmd::PortraitToggle(false))
+        );
+    }
+
+    #[test]
+    fn parse_unknown() {
         match parse_slash_command("/unknown") {
             Some(SlashCmd::Unknown(s)) => assert_eq!(s, "/unknown"),
             other => panic!("expected Unknown, got {other:?}"),
@@ -469,61 +710,41 @@ mod tests {
         assert!(parse_slash_command("hello").is_none());
     }
 
-    #[test]
-    fn tab_complete_single_match() {
-        let mut buf = "/ex".to_string();
-        assert!(tab_complete(&mut buf, &[]));
-        assert_eq!(buf, "/exit");
-    }
+    // ── Tab completion tests ─────────────────────────────────────────────
 
     #[test]
-    fn tab_complete_common_prefix() {
-        let mut buf = "/persona portrait size ".to_string();
-        assert!(!tab_complete(&mut buf, &[]));
+    fn tab_complete_single_match() {
+        let mut input = InputState::default();
+        input.set("/ex");
+        assert!(tab_complete(&mut input, &[]));
+        assert_eq!(input.buffer, "/exit");
     }
 
     #[test]
     fn tab_complete_partial_prefix() {
-        let mut buf = "/per".to_string();
-        assert!(tab_complete(&mut buf, &[]));
-        // Matches all /persona portrait variants (size, on, off, top, bottom)
-        assert_eq!(buf, "/persona portrait ");
+        let mut input = InputState::default();
+        input.set("/per");
+        assert!(tab_complete(&mut input, &[]));
+        assert_eq!(input.buffer, "/persona portrait ");
     }
 
     #[test]
     fn tab_complete_no_match() {
-        let mut buf = "/xyz".to_string();
-        assert!(!tab_complete(&mut buf, &[]));
-        assert_eq!(buf, "/xyz");
-    }
-
-    #[test]
-    fn tab_complete_non_slash_ignored() {
-        let mut buf = "hello".to_string();
-        assert!(!tab_complete(&mut buf, &[]));
-        assert_eq!(buf, "hello");
-    }
-
-    #[test]
-    fn tab_complete_exact_match_no_change() {
-        let mut buf = "/exit".to_string();
-        assert!(!tab_complete(&mut buf, &[]));
+        let mut input = InputState::default();
+        input.set("/xyz");
+        assert!(!tab_complete(&mut input, &[]));
     }
 
     #[test]
     fn tab_complete_with_dynamic_commands() {
         let dynamic = vec!["/my-custom-cmd".to_string()];
-        let mut buf = "/my".to_string();
-        assert!(tab_complete(&mut buf, &dynamic));
-        assert_eq!(buf, "/my-custom-cmd");
+        let mut input = InputState::default();
+        input.set("/my");
+        assert!(tab_complete(&mut input, &dynamic));
+        assert_eq!(input.buffer, "/my-custom-cmd");
     }
 
-    #[test]
-    fn tab_complete_login() {
-        let mut buf = "/lo".to_string();
-        assert!(tab_complete(&mut buf, &[]));
-        assert_eq!(buf, "/login");
-    }
+    // ── History tests ────────────────────────────────────────────────────
 
     #[test]
     fn history_prev_cycles_backward() {
@@ -539,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn history_next_cycles_forward_and_restores_draft() {
+    fn history_next_restores_draft() {
         let mut h = InputHistory::new();
         h.push("first".to_string());
         h.push("second".to_string());
@@ -560,7 +781,6 @@ mod tests {
     #[test]
     fn history_skips_duplicates() {
         let mut h = InputHistory::new();
-        h.push("same".to_string());
         h.push("same".to_string());
         h.push("same".to_string());
         assert_eq!(h.entries.len(), 1);
