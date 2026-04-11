@@ -934,9 +934,10 @@ pub fn render_input(frame: &mut Frame, state: &AppState, area: Rect) {
 
     frame.render_widget(input, area);
 
-    // Position cursor accounting for text wrapping
-    // +2 for "> " prefix
-    let inner_width = area.width.saturating_sub(2); // inside borders (no left/right borders but paragraph padding)
+    // Position cursor accounting for text wrapping.
+    // No left/right borders — inner width equals area width.
+    // +2 for "> " prefix.
+    let inner_width = area.width;
     let char_pos = state.input.cursor as u16 + 2; // +2 for "> "
     let (cursor_x, cursor_y) = if inner_width == 0 {
         (area.x, area.y + 1)

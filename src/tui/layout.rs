@@ -41,9 +41,10 @@ pub fn compute_layout(
     focus_mode: bool,
     input_len: usize,
 ) -> TuiLayout {
-    // Compute input height based on text length — grows as user types
-    // +2 for "> " prefix, +2 for borders (top + bottom)
-    let text_cols = area.width.saturating_sub(2); // available width inside borders
+    // Compute input height based on text length — grows as user types.
+    // No left/right borders, so inner width = area width.
+    // +2 for "> " prefix, +2 for borders (top + bottom).
+    let text_cols = area.width; // no left/right borders
     let text_with_prefix = input_len as u16 + 2; // "> " prefix
     let text_lines = if text_cols == 0 {
         1
