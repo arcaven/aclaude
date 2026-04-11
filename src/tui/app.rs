@@ -622,15 +622,17 @@ pub fn render_conversation(frame: &mut Frame, state: &mut AppState, area: Rect) 
                             content,
                             is_streaming,
                         } => {
-                            let style = Style::default().fg(Color::White);
-                            for text_line in content.lines() {
-                                lines.push(Line::from(Span::styled(text_line.to_string(), style)));
-                            }
                             if *is_streaming {
+                                // Streaming text — render with markdown for
+                                // partial formatting (code blocks, headers)
+                                lines.extend(super::markdown::render_markdown_safe(content));
                                 lines.push(Line::from(Span::styled(
                                     "▌",
                                     Style::default().fg(Color::Green),
                                 )));
+                            } else {
+                                // Committed text — full markdown rendering
+                                lines.extend(super::markdown::render_markdown_safe(content));
                             }
                         }
                         TurnBlock::ToolCall(tool) => {

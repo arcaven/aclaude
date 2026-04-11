@@ -8,6 +8,7 @@ pub mod app;
 pub mod diff;
 pub mod input;
 pub mod layout;
+pub mod markdown;
 pub mod portrait_widget;
 pub mod scroll;
 
