@@ -264,6 +264,33 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                                 }
                             }
 
+                            InputAction::PortraitTogglePosition => {
+                                state.portrait_position = state.portrait_position.toggle();
+                                state.set_status(format!(
+                                    "Portrait: {}",
+                                    match state.portrait_position {
+                                        app::PortraitPosition::TopRight => "top",
+                                        app::PortraitPosition::BottomRight => "bottom",
+                                    }
+                                ));
+                            }
+                            InputAction::PortraitToggleVisible => {
+                                state.portrait_visible = !state.portrait_visible;
+                                state.set_status(format!(
+                                    "Portrait {}",
+                                    if state.portrait_visible { "on" } else { "off" }
+                                ));
+                            }
+                            InputAction::PortraitCycleSize => {
+                                state.portrait_size = state.portrait_size.next();
+                                if let Some(pw) = &mut portrait_widget {
+                                    pw.set_size(state.portrait_size, &portrait_paths);
+                                }
+                                state.set_status(format!(
+                                    "Portrait size: {}",
+                                    state.portrait_size.label()
+                                ));
+                            }
                             InputAction::ToggleExpand => state.toggle_last_tool_expand(),
                             InputAction::ToggleThinking => {
                                 state.show_thinking = !state.show_thinking;

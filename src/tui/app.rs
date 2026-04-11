@@ -38,6 +38,25 @@ impl PortraitSize {
             _ => None,
         }
     }
+
+    /// Cycle to the next size.
+    pub fn next(self) -> Self {
+        match self {
+            Self::Small => Self::Medium,
+            Self::Medium => Self::Large,
+            Self::Large => Self::Original,
+            Self::Original => Self::Small,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Small => "small",
+            Self::Medium => "medium",
+            Self::Large => "large",
+            Self::Original => "original",
+        }
+    }
 }
 
 /// Portrait position in the conversation viewport.

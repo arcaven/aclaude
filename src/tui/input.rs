@@ -156,6 +156,12 @@ pub enum InputAction {
     ToggleThinking,
     /// Open external editor for input (Ctrl+G).
     OpenEditor,
+    /// Toggle portrait position top/bottom (Ctrl+P).
+    PortraitTogglePosition,
+    /// Toggle portrait on/off (Alt+P).
+    PortraitToggleVisible,
+    /// Cycle portrait size (Alt+S).
+    PortraitCycleSize,
     /// No action (key consumed but no effect).
     None,
 }
@@ -399,6 +405,11 @@ pub fn handle_key(
             InputAction::None
         }
         (KeyModifiers::CONTROL, KeyCode::Char('g')) => InputAction::OpenEditor,
+
+        // Portrait hotkeys
+        (KeyModifiers::CONTROL, KeyCode::Char('p')) => InputAction::PortraitTogglePosition,
+        (KeyModifiers::ALT, KeyCode::Char('p')) => InputAction::PortraitToggleVisible,
+        (KeyModifiers::ALT, KeyCode::Char('s')) => InputAction::PortraitCycleSize,
 
         // Alt shortcuts
         (KeyModifiers::ALT, KeyCode::Char('t')) => InputAction::ToggleThinking,
