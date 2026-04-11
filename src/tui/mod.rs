@@ -118,6 +118,12 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                                     state.status_message = Some(format!("Send error: {e}"));
                                 }
                             }
+                            InputAction::SlashCommand(SlashCmd::Exit) => break Ok(()),
+                            InputAction::SlashCommand(SlashCmd::Login) => {
+                                state.status_message = Some(
+                                    "Auth is managed by Claude Code. Run `claude login` in a separate terminal to re-authenticate.".to_string()
+                                );
+                            }
                             InputAction::SlashCommand(SlashCmd::PortraitSize(size_str)) => {
                                 if let Some(size) = PortraitSize::parse(&size_str) {
                                     state.portrait_size = size;

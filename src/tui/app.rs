@@ -271,6 +271,12 @@ pub fn render_input(frame: &mut Frame, state: &AppState, area: Rect) {
     .block(Block::default().borders(Borders::TOP | Borders::BOTTOM));
 
     frame.render_widget(input, area);
+
+    // Position cursor after the input text (inside the bordered area)
+    // +1 for top border, +2 for "> " prefix
+    let cursor_x = area.x + 2 + state.input_buffer.len() as u16;
+    let cursor_y = area.y + 1; // +1 for top border
+    frame.set_cursor_position((cursor_x.min(area.x + area.width - 1), cursor_y));
 }
 
 /// Render the status bar.

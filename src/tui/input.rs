@@ -1,6 +1,16 @@
-//! Key handling, slash command parsing, and input history for the TUI.
+//! Key handling, slash command parsing, tab completion, and input history.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+/// Known slash commands for tab completion.
+const KNOWN_COMMANDS: &[&str] = &[
+    "/exit",
+    "/login",
+    "/persona portrait size small",
+    "/persona portrait size medium",
+    "/persona portrait size large",
+    "/persona portrait size original",
+];
 
 /// Action resulting from a key press.
 #[derive(Debug)]
@@ -22,8 +32,12 @@ pub enum InputAction {
 }
 
 /// Parsed slash commands.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SlashCmd {
+    /// Exit the TUI.
+    Exit,
+    /// Show auth/login info.
+    Login,
     /// Set portrait size: /persona portrait size [small|medium|large|original]
     PortraitSize(String),
     /// Unknown slash command.
@@ -115,9 +129,70 @@ pub enum NextResult<'a> {
     NotBrowsing,
 }
 
+/// Tab-complete a slash command.
+///
+/// If the input starts with `/`, finds matching commands from the known list.
+/// - Single match: completes to that command.
+/// - Multiple matches: completes to longest common prefix.
+/// - No match: no change.
+///
+/// Returns true if the buffer was modified.
+pub fn tab_complete(input_buffer: &mut String) -> bool {
+    if !input_buffer.starts_with('/') {
+        return false;
+    }
+
+    let prefix = input_buffer.as_str();
+    let matches: Vec<&str> = KNOWN_COMMANDS
+        .iter()
+        .filter(|cmd| cmd.starts_with(prefix) && **cmd != prefix)
+        .copied()
+        .collect();
+
+    match matches.len() {
+        0 => false,
+        1 => {
+            *input_buffer = matches[0].to_string();
+            true
+        }
+        _ => {
+            // Complete to longest common prefix
+            let lcp = longest_common_prefix(&matches);
+            if lcp.len() > input_buffer.len() {
+                *input_buffer = lcp;
+                true
+            } else {
+                false
+            }
+        }
+    }
+}
+
+/// Find the longest common prefix of a set of strings.
+fn longest_common_prefix(strings: &[&str]) -> String {
+    if strings.is_empty() {
+        return String::new();
+    }
+    let first = strings[0];
+    let mut len = first.len();
+    for s in &strings[1..] {
+        len = first
+            .chars()
+            .zip(s.chars())
+            .take(len)
+            .take_while(|(a, b)| a == b)
+            .count();
+    }
+    first[..first
+        .char_indices()
+        .nth(len)
+        .map_or(first.len(), |(i, _)| i)]
+        .to_string()
+}
+
 /// Handle a key event against the current input buffer and history.
 ///
-/// Modifies `input_buffer` in place (for character input, backspace, history).
+/// Modifies `input_buffer` in place (for character input, backspace, history, tab).
 /// Returns an `InputAction` describing what the TUI should do.
 pub fn handle_key(
     event: KeyEvent,
@@ -127,6 +202,12 @@ pub fn handle_key(
     match (event.modifiers, event.code) {
         // Quit
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => InputAction::Quit,
+
+        // Tab completion
+        (_, KeyCode::Tab) => {
+            tab_complete(input_buffer);
+            InputAction::None
+        }
 
         // Submit
         (_, KeyCode::Enter) => {
@@ -189,6 +270,12 @@ fn parse_slash_command(text: &str) -> Option<SlashCmd> {
 
     let parts: Vec<&str> = text.split_whitespace().collect();
 
+    match parts.first().copied() {
+        Some("/exit") => return Some(SlashCmd::Exit),
+        Some("/login") => return Some(SlashCmd::Login),
+        _ => {}
+    }
+
     // /persona portrait size <size>
     if parts.len() == 4 && parts[0] == "/persona" && parts[1] == "portrait" && parts[2] == "size" {
         let size = parts[3].to_lowercase();
@@ -203,6 +290,16 @@ fn parse_slash_command(text: &str) -> Option<SlashCmd> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_exit() {
+        assert_eq!(parse_slash_command("/exit"), Some(SlashCmd::Exit));
+    }
+
+    #[test]
+    fn parse_login() {
+        assert_eq!(parse_slash_command("/login"), Some(SlashCmd::Login));
+    }
 
     #[test]
     fn parse_portrait_size_command() {
@@ -226,6 +323,54 @@ mod tests {
     }
 
     #[test]
+    fn tab_complete_single_match() {
+        let mut buf = "/ex".to_string();
+        assert!(tab_complete(&mut buf));
+        assert_eq!(buf, "/exit");
+    }
+
+    #[test]
+    fn tab_complete_common_prefix() {
+        let mut buf = "/persona portrait size ".to_string();
+        // All four size variants match — no common prefix beyond input
+        assert!(!tab_complete(&mut buf));
+    }
+
+    #[test]
+    fn tab_complete_partial_prefix() {
+        let mut buf = "/per".to_string();
+        assert!(tab_complete(&mut buf));
+        assert_eq!(buf, "/persona portrait size ");
+    }
+
+    #[test]
+    fn tab_complete_no_match() {
+        let mut buf = "/xyz".to_string();
+        assert!(!tab_complete(&mut buf));
+        assert_eq!(buf, "/xyz");
+    }
+
+    #[test]
+    fn tab_complete_non_slash_ignored() {
+        let mut buf = "hello".to_string();
+        assert!(!tab_complete(&mut buf));
+        assert_eq!(buf, "hello");
+    }
+
+    #[test]
+    fn tab_complete_exact_match_no_change() {
+        let mut buf = "/exit".to_string();
+        assert!(!tab_complete(&mut buf));
+    }
+
+    #[test]
+    fn tab_complete_login() {
+        let mut buf = "/lo".to_string();
+        assert!(tab_complete(&mut buf));
+        assert_eq!(buf, "/login");
+    }
+
+    #[test]
     fn history_prev_cycles_backward() {
         let mut h = InputHistory::new();
         h.push("first".to_string());
@@ -235,7 +380,6 @@ mod tests {
         assert_eq!(h.prev("current"), Some("third"));
         assert_eq!(h.prev("current"), Some("second"));
         assert_eq!(h.prev("current"), Some("first"));
-        // At oldest — stays
         assert_eq!(h.prev("current"), Some("first"));
     }
 
@@ -245,11 +389,9 @@ mod tests {
         h.push("first".to_string());
         h.push("second".to_string());
 
-        // Browse back
         h.prev("my draft");
         h.prev("my draft");
 
-        // Browse forward
         match h.newer() {
             NextResult::Entry(s) => assert_eq!(s, "second"),
             _ => panic!("expected Entry"),
