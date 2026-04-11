@@ -929,15 +929,26 @@ pub fn render_input(frame: &mut Frame, state: &AppState, area: Rect) {
         Span::styled("> ", Style::default().fg(Color::Green)),
         display_text,
     ]))
-    .block(Block::default().borders(Borders::TOP | Borders::BOTTOM));
+    .block(Block::default().borders(Borders::TOP | Borders::BOTTOM))
+    .wrap(Wrap { trim: false });
 
     frame.render_widget(input, area);
 
-    // Position cursor at the InputState cursor position
-    // +1 for top border, +2 for "> " prefix
-    let cursor_x = area.x + 2 + state.input.cursor as u16;
-    let cursor_y = area.y + 1;
-    frame.set_cursor_position((cursor_x.min(area.x + area.width - 1), cursor_y));
+    // Position cursor accounting for text wrapping
+    // +2 for "> " prefix
+    let inner_width = area.width.saturating_sub(2); // inside borders (no left/right borders but paragraph padding)
+    let char_pos = state.input.cursor as u16 + 2; // +2 for "> "
+    let (cursor_x, cursor_y) = if inner_width == 0 {
+        (area.x, area.y + 1)
+    } else {
+        let line_num = char_pos / inner_width;
+        let col = char_pos % inner_width;
+        (area.x + col, area.y + 1 + line_num) // +1 for top border
+    };
+    frame.set_cursor_position((
+        cursor_x.min(area.x + area.width - 1),
+        cursor_y.min(area.y + area.height - 1),
+    ));
 }
 
 /// Render the status bar.

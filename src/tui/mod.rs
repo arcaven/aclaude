@@ -16,7 +16,8 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind, MouseEventKind,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyEventKind, MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -87,7 +88,13 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
         pw.set_size(PortraitSize::Medium, &portrait_paths);
     }
 
-    execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture).map_err(|e| {
+    execute!(
+        io::stdout(),
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )
+    .map_err(|e| {
         let _ = disable_raw_mode();
         crate::error::AclaudeError::Session {
             message: format!("failed to enter alternate screen: {e}"),
@@ -304,19 +311,20 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                                     // Dump conversation to native terminal scrollback
                                     let _ = execute!(
                                         io::stdout(),
+                                        DisableBracketedPaste,
                                         DisableMouseCapture,
                                         LeaveAlternateScreen
                                     );
                                     let _ = disable_raw_mode();
                                     print!("{}", state.conversation_as_text());
                                     println!("--- Press any key to return ---");
-                                    // Wait for a key press
                                     let _ = enable_raw_mode();
                                     let _ = crossterm::event::read();
                                     let _ = execute!(
                                         io::stdout(),
                                         EnterAlternateScreen,
-                                        EnableMouseCapture
+                                        EnableMouseCapture,
+                                        EnableBracketedPaste
                                     );
                                     // Stay in Normal after viewing transcript
                                     state.transcript_mode = app::TranscriptMode::Normal;
@@ -348,6 +356,14 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                             InputAction::PageDown => state.scroll.page_down(),
                             InputAction::ScrollEnd => state.scroll.scroll_to_bottom(),
                             InputAction::None => {}
+                        }
+                    }
+                    Some(Event::Paste(text)) => {
+                        // Bracketed paste — insert pasted text at cursor
+                        for c in text.chars() {
+                            if c != '\n' && c != '\r' {
+                                state.input.insert(c);
+                            }
                         }
                     }
                     Some(Event::Mouse(mouse)) => {
@@ -385,6 +401,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                         has_portrait,
                         has_perm_prompt,
                         is_focus,
+                        state.input.buffer.len(),
                     );
 
                     app::render_conversation(frame, &mut state, tui_layout.conversation);
@@ -407,7 +424,12 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
 
     // Cleanup
     session.shutdown().await;
-    let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
+    let _ = execute!(
+        io::stdout(),
+        DisableBracketedPaste,
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    );
     let _ = disable_raw_mode();
 
     result

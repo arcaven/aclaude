@@ -7,8 +7,11 @@ use super::app::{PortraitPosition, PortraitSize};
 /// Minimum terminal width to show portrait overlay.
 const MIN_WIDTH_FOR_PORTRAIT: u16 = 60;
 
-/// Input area height in rows.
-const INPUT_HEIGHT: u16 = 3;
+/// Minimum input area height in rows (1 border + 1 text + 1 border).
+const MIN_INPUT_HEIGHT: u16 = 3;
+
+/// Maximum input area height (cap growth to prevent eating the conversation).
+const MAX_INPUT_HEIGHT: u16 = 10;
 
 /// Status bar height in rows.
 const STATUS_HEIGHT: u16 = 1;
@@ -36,7 +39,18 @@ pub fn compute_layout(
     has_portrait: bool,
     has_permission_prompt: bool,
     focus_mode: bool,
+    input_len: usize,
 ) -> TuiLayout {
+    // Compute input height based on text length — grows as user types
+    // +2 for "> " prefix, +2 for borders (top + bottom)
+    let text_cols = area.width.saturating_sub(2); // available width inside borders
+    let text_with_prefix = input_len as u16 + 2; // "> " prefix
+    let text_lines = if text_cols == 0 {
+        1
+    } else {
+        (text_with_prefix / text_cols) + 1
+    };
+    let input_height = (text_lines + 2).clamp(MIN_INPUT_HEIGHT, MAX_INPUT_HEIGHT);
     // Focus mode: maximize conversation, minimal chrome
     if focus_mode {
         let vertical = Layout::default()
@@ -71,13 +85,13 @@ pub fn compute_layout(
         vec![
             Constraint::Min(1),                    // conversation
             Constraint::Length(PERMISSION_HEIGHT), // permission prompt
-            Constraint::Length(INPUT_HEIGHT),      // input
+            Constraint::Length(input_height),      // input
             Constraint::Length(STATUS_HEIGHT),     // status
         ]
     } else {
         vec![
             Constraint::Min(1),                // conversation
-            Constraint::Length(INPUT_HEIGHT),  // input
+            Constraint::Length(input_height),  // input
             Constraint::Length(STATUS_HEIGHT), // status
         ]
     };
