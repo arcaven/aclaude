@@ -12,6 +12,9 @@ pub struct SessionConfig {
     pub model: String,
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u64,
+    /// Interactive mode: "aclaude" (custom TUI) or "claude" (native Claude Code TUI).
+    #[serde(default = "default_mode")]
+    pub mode: String,
 }
 
 fn default_model() -> String {
@@ -19,6 +22,9 @@ fn default_model() -> String {
 }
 fn default_max_tokens() -> u64 {
     16384
+}
+fn default_mode() -> String {
+    "aclaude".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,6 +129,7 @@ impl Default for SessionConfig {
         Self {
             model: default_model(),
             max_tokens: default_max_tokens(),
+            mode: default_mode(),
         }
     }
 }

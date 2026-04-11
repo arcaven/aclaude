@@ -52,6 +52,10 @@ struct Cli {
     #[arg(long)]
     streaming: bool,
 
+    /// Interactive mode: "aclaude" (custom TUI) or "claude" (native Claude Code TUI)
+    #[arg(long)]
+    mode: Option<String>,
+
     /// Arguments passed through to the claude CLI (after --)
     #[arg(last = true)]
     claude_args: Vec<String>,
@@ -192,11 +196,21 @@ fn main() -> anyhow::Result<()> {
 
     // Build CLI overrides table
     let mut overrides = toml::Table::new();
-    if cli.model.is_some() || cli.theme.is_some() || cli.role.is_some() || cli.immersion.is_some() {
+    if cli.model.is_some()
+        || cli.theme.is_some()
+        || cli.role.is_some()
+        || cli.immersion.is_some()
+        || cli.mode.is_some()
+    {
+        let mut session_overrides = toml::Table::new();
         if let Some(model) = &cli.model {
-            let mut session = toml::Table::new();
-            session.insert("model".to_string(), toml::Value::String(model.clone()));
-            overrides.insert("session".to_string(), toml::Value::Table(session));
+            session_overrides.insert("model".to_string(), toml::Value::String(model.clone()));
+        }
+        if let Some(mode) = &cli.mode {
+            session_overrides.insert("mode".to_string(), toml::Value::String(mode.clone()));
+        }
+        if !session_overrides.is_empty() {
+            overrides.insert("session".to_string(), toml::Value::Table(session_overrides));
         }
         let mut persona_overrides = toml::Table::new();
         if let Some(theme) = &cli.theme {
@@ -235,8 +249,23 @@ fn main() -> anyhow::Result<()> {
                 let usage = session::start_streaming_session(&cfg, &cli.claude_args)?;
                 usage.print_summary();
             } else {
-                // Default: interactive TUI session
-                session::start_session(&cfg, &cli.claude_args)?;
+                // Default: interactive session — mode selects TUI
+                match cfg.session.mode.as_str() {
+                    "claude" => {
+                        // Native Claude Code TUI (inherited stdio)
+                        session::start_session(&cfg, &cli.claude_args)?;
+                    }
+                    _ => {
+                        // aclaude TUI (custom ratatui over NDJSON)
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .map_err(|e| aclaude::error::AclaudeError::Session {
+                                message: format!("failed to create async runtime: {e}"),
+                            })?;
+                        rt.block_on(tui::run_tui(&cfg))?;
+                    }
+                }
             }
         }
 
