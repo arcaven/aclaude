@@ -2,10 +2,7 @@
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-use super::app::{PortraitPosition, PortraitSize};
-
-/// Minimum terminal width to show portrait overlay.
-const MIN_WIDTH_FOR_PORTRAIT: u16 = 60;
+use super::app::PortraitPosition;
 
 /// Minimum input area height in rows (1 border + 1 text + 1 border).
 const MIN_INPUT_HEIGHT: u16 = 3;
@@ -34,9 +31,8 @@ pub struct TuiLayout {
 /// Compute layout for the given terminal size.
 pub fn compute_layout(
     area: Rect,
-    portrait_size: PortraitSize,
     portrait_position: PortraitPosition,
-    has_portrait: bool,
+    portrait_cell_size: Option<(u16, u16)>,
     has_permission_prompt: bool,
     focus_mode: bool,
     input_len: usize,
@@ -67,10 +63,8 @@ pub fn compute_layout(
 
         return TuiLayout {
             portrait: compute_portrait_rect(
-                portrait_size,
                 portrait_position,
-                has_portrait,
-                area.width,
+                portrait_cell_size,
                 conversation,
                 input,
             ),
@@ -109,14 +103,7 @@ pub fn compute_layout(
     };
 
     TuiLayout {
-        portrait: compute_portrait_rect(
-            portrait_size,
-            portrait_position,
-            has_portrait,
-            area.width,
-            conversation,
-            input,
-        ),
+        portrait: compute_portrait_rect(portrait_position, portrait_cell_size, conversation, input),
         conversation,
         permission_prompt,
         input,
@@ -126,38 +113,35 @@ pub fn compute_layout(
 
 /// Compute the portrait overlay Rect.
 ///
-/// The portrait is always right-aligned with a small margin from the
-/// terminal edge. All sizes share the same right edge. Position:
-/// - TopRight: top-right corner of conversation, slight margin from top and right
-/// - BottomRight: bottom-right, just above the input area's top border
+/// Uses actual image cell dimensions for a tight fit. The right edge is
+/// always anchored at `terminal_width - PORTRAIT_MARGIN` regardless of
+/// portrait size. Position:
+/// - TopRight: anchored to top-right with margin
+/// - BottomRight: anchored just above the input area's top border
 fn compute_portrait_rect(
-    portrait_size: PortraitSize,
     portrait_position: PortraitPosition,
-    has_portrait: bool,
-    terminal_width: u16,
+    portrait_cell_size: Option<(u16, u16)>,
     conversation: Rect,
     input: Rect,
 ) -> Rect {
-    if !has_portrait || terminal_width < MIN_WIDTH_FOR_PORTRAIT {
+    let Some((pw, ph)) = portrait_cell_size else {
+        return Rect::default();
+    };
+
+    if pw == 0 || ph == 0 {
         return Rect::default();
     }
 
-    let pw = portrait_column_width(portrait_size, terminal_width);
-    // Height proportional to width (roughly 4:3 aspect ratio for portraits)
-    let max_height = conversation.height.saturating_sub(PORTRAIT_MARGIN * 2);
-    let ph = (pw * 3 / 4).min(max_height).max(4);
-
-    // Right edge: flush to terminal right with margin
-    let x = conversation
-        .x
-        .saturating_add(conversation.width)
+    // Right edge anchored to terminal right minus margin
+    let right_edge = conversation.x + conversation.width;
+    let x = right_edge
         .saturating_sub(pw)
         .saturating_sub(PORTRAIT_MARGIN);
 
     let y = match portrait_position {
         PortraitPosition::TopRight => conversation.y + PORTRAIT_MARGIN,
         PortraitPosition::BottomRight => {
-            // Just above the input area's top border, with margin
+            // Just above the input area's top border
             input.y.saturating_sub(ph).saturating_sub(PORTRAIT_MARGIN)
         }
     };
@@ -167,15 +151,5 @@ fn compute_portrait_rect(
         y,
         width: pw,
         height: ph,
-    }
-}
-
-/// Portrait overlay width for a given size setting.
-fn portrait_column_width(size: PortraitSize, terminal_width: u16) -> u16 {
-    match size {
-        PortraitSize::Small => 20,
-        PortraitSize::Medium => 32,
-        PortraitSize::Large => 48,
-        PortraitSize::Original => (terminal_width / 3).min(64),
     }
 }

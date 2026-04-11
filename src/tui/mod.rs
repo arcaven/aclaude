@@ -388,17 +388,26 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                 state.frame_count += 1;
                 state.tick_status_timeout();
 
-                let has_portrait = state.portrait_visible
-                    && portrait_widget.as_ref().is_some_and(portrait_widget::PortraitWidget::has_image);
                 let has_perm_prompt = state.pending_permission.is_some();
 
                 terminal.draw(|frame| {
+                    let area = frame.area();
+                    // Compute portrait cell size from actual image dimensions
+                    let portrait_cell_size = if state.portrait_visible {
+                        portrait_widget.as_ref().and_then(|pw| {
+                            let max_w = portrait_max_width(state.portrait_size, area.width);
+                            let max_h = area.height / 2;
+                            pw.cell_size(max_w, max_h)
+                        })
+                    } else {
+                        None
+                    };
+
                     let is_focus = state.transcript_mode == app::TranscriptMode::Focus;
                     let tui_layout = compute_layout(
-                        frame.area(),
-                        state.portrait_size,
+                        area,
                         state.portrait_position,
-                        has_portrait,
+                        portrait_cell_size,
                         has_perm_prompt,
                         is_focus,
                         state.input.buffer.len(),
@@ -433,4 +442,14 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
     let _ = disable_raw_mode();
 
     result
+}
+
+/// Max width in cells for a portrait size setting.
+fn portrait_max_width(size: PortraitSize, terminal_width: u16) -> u16 {
+    match size {
+        PortraitSize::Small => 20,
+        PortraitSize::Medium => 32,
+        PortraitSize::Large => 48,
+        PortraitSize::Original => (terminal_width / 3).min(64),
+    }
 }
