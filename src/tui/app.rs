@@ -5,7 +5,7 @@
 //! viewport, input area, and status bar using a `RenderCtx` for purity.
 
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -219,6 +219,8 @@ pub struct AppState {
     pub permission_mode: PermissionMode,
     /// Pending permission prompt (blocks normal input when Some).
     pub pending_permission: Option<PermissionPrompt>,
+    /// When the status message was set (for auto-clear after timeout).
+    pub status_message_at: Option<Instant>,
 }
 
 impl AppState {
@@ -236,6 +238,7 @@ impl AppState {
             frame_count: 0,
             permission_mode: PermissionMode::Default,
             pending_permission: None,
+            status_message_at: None,
         }
     }
 
@@ -513,6 +516,22 @@ impl AppState {
             })
         } else {
             None
+        }
+    }
+
+    /// Set a status message with auto-clear timestamp.
+    pub fn set_status(&mut self, msg: String) {
+        self.status_message = Some(msg);
+        self.status_message_at = Some(Instant::now());
+    }
+
+    /// Clear expired status messages (older than 5 seconds).
+    pub fn tick_status_timeout(&mut self) {
+        if let Some(at) = self.status_message_at {
+            if at.elapsed() >= Duration::from_secs(5) {
+                self.status_message = None;
+                self.status_message_at = None;
+            }
         }
     }
 

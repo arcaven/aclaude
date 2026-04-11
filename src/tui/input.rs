@@ -1,10 +1,15 @@
 //! Key handling, slash command parsing, tab completion, and input history.
 
+use std::path::Path;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-/// Known slash commands for tab completion.
-const KNOWN_COMMANDS: &[&str] = &[
+/// Static slash commands (always available, handled locally by aclaude).
+const LOCAL_COMMANDS: &[&str] = &[
+    "/clear",
+    "/cost",
     "/exit",
+    "/help",
     "/login",
     "/persona portrait size small",
     "/persona portrait size medium",
@@ -46,23 +51,25 @@ pub enum SlashCmd {
     Exit,
     /// Show auth/login info.
     Login,
-    /// Set portrait size: /persona portrait size [small|medium|large|original]
+    /// Clear conversation display.
+    Clear,
+    /// Show available commands and keybindings.
+    Help,
+    /// Show session cost from metrics.
+    Cost,
+    /// Set portrait size.
     PortraitSize(String),
+    /// Forward to Claude Code as a user message (handles /compact, /model, etc.).
+    ForwardToAgent(String),
     /// Unknown slash command.
     Unknown(String),
 }
 
 /// Input history with up/down arrow cycling.
-///
-/// Stores previous inputs and allows browsing through them.
-/// When browsing starts, the current draft is saved and restored
-/// when the user cycles past the newest entry.
 #[derive(Default)]
 pub struct InputHistory {
     entries: Vec<String>,
-    /// Current position in history. `None` means not browsing.
     position: Option<usize>,
-    /// Saved draft from when browsing started.
     draft: String,
 }
 
@@ -71,9 +78,7 @@ impl InputHistory {
         Self::default()
     }
 
-    /// Record a submitted input.
     pub fn push(&mut self, entry: String) {
-        // Don't store empty or duplicate-of-last entries
         if entry.is_empty() || self.entries.last().is_some_and(|last| last == &entry) {
             self.position = None;
             return;
@@ -82,23 +87,18 @@ impl InputHistory {
         self.position = None;
     }
 
-    /// Navigate to an older entry (up arrow). Returns the text to display.
     pub fn prev(&mut self, current_input: &str) -> Option<&str> {
         if self.entries.is_empty() {
             return None;
         }
         match self.position {
             None => {
-                // Start browsing — save current input as draft
                 self.draft = current_input.to_string();
                 let idx = self.entries.len() - 1;
                 self.position = Some(idx);
                 Some(&self.entries[idx])
             }
-            Some(0) => {
-                // Already at oldest — stay put
-                Some(&self.entries[0])
-            }
+            Some(0) => Some(&self.entries[0]),
             Some(idx) => {
                 let new_idx = idx - 1;
                 self.position = Some(new_idx);
@@ -107,14 +107,11 @@ impl InputHistory {
         }
     }
 
-    /// Navigate to a newer entry (down arrow). Returns the text to display,
-    /// or `None` if we've cycled past the newest entry (restores draft).
     pub fn newer(&mut self) -> NextResult<'_> {
         match self.position {
             None => NextResult::NotBrowsing,
             Some(idx) => {
                 if idx + 1 >= self.entries.len() {
-                    // Past newest — restore draft
                     self.position = None;
                     NextResult::Draft(&self.draft)
                 } else {
@@ -127,31 +124,44 @@ impl InputHistory {
     }
 }
 
-/// Result of navigating forward in history.
 pub enum NextResult<'a> {
-    /// An older entry.
     Entry(&'a str),
-    /// Restored draft (cycled past newest).
     Draft(&'a str),
-    /// Not currently browsing history.
     NotBrowsing,
 }
 
-/// Tab-complete a slash command.
+/// Tab-complete slash commands or @ file paths.
 ///
-/// If the input starts with `/`, finds matching commands from the known list.
-/// - Single match: completes to that command.
-/// - Multiple matches: completes to longest common prefix.
-/// - No match: no change.
-///
-/// Returns true if the buffer was modified.
-pub fn tab_complete(input_buffer: &mut String) -> bool {
+/// For slash commands: merges static local commands with dynamic commands
+/// from system/init. For @ file paths: completes from the current directory.
+pub fn tab_complete(input_buffer: &mut String, dynamic_commands: &[String]) -> bool {
+    // @ file path completion
+    if let Some(at_pos) = input_buffer.rfind('@') {
+        let partial = &input_buffer[at_pos + 1..];
+        if let Some(completed) = complete_file_path(partial) {
+            let prefix = input_buffer[..at_pos + 1].to_string();
+            *input_buffer = format!("{prefix}{completed}");
+            return true;
+        }
+        return false;
+    }
+
+    // Slash command completion
     if !input_buffer.starts_with('/') {
         return false;
     }
 
     let prefix = input_buffer.as_str();
-    let matches: Vec<&str> = KNOWN_COMMANDS
+
+    // Build combined command list: local + dynamic
+    let mut all_commands: Vec<&str> = LOCAL_COMMANDS.to_vec();
+    for cmd in dynamic_commands {
+        if !all_commands.contains(&cmd.as_str()) {
+            all_commands.push(cmd);
+        }
+    }
+
+    let matches: Vec<&str> = all_commands
         .iter()
         .filter(|cmd| cmd.starts_with(prefix) && **cmd != prefix)
         .copied()
@@ -164,7 +174,6 @@ pub fn tab_complete(input_buffer: &mut String) -> bool {
             true
         }
         _ => {
-            // Complete to longest common prefix
             let lcp = longest_common_prefix(&matches);
             if lcp.len() > input_buffer.len() {
                 *input_buffer = lcp;
@@ -176,7 +185,61 @@ pub fn tab_complete(input_buffer: &mut String) -> bool {
     }
 }
 
-/// Find the longest common prefix of a set of strings.
+/// Complete a file path from the current directory.
+fn complete_file_path(partial: &str) -> Option<String> {
+    if partial.is_empty() {
+        return None;
+    }
+
+    let (dir, file_prefix) = if let Some(sep) = partial.rfind('/') {
+        (&partial[..=sep], &partial[sep + 1..])
+    } else {
+        (".", partial)
+    };
+
+    let dir_path = Path::new(dir);
+    let entries = std::fs::read_dir(dir_path).ok()?;
+
+    let mut matches: Vec<String> = entries
+        .filter_map(std::result::Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(file_prefix) {
+                let full = if dir == "." {
+                    name
+                } else {
+                    format!("{dir}{name}")
+                };
+                // Append / for directories
+                if entry.file_type().ok()?.is_dir() {
+                    Some(format!("{full}/"))
+                } else {
+                    Some(full)
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    matches.sort();
+
+    match matches.len() {
+        0 => None,
+        1 => Some(matches.into_iter().next().expect("checked len")),
+        _ => {
+            // Complete to longest common prefix
+            let refs: Vec<&str> = matches.iter().map(String::as_str).collect();
+            let lcp = longest_common_prefix(&refs);
+            if lcp.len() > partial.len() {
+                Some(lcp)
+            } else {
+                None
+            }
+        }
+    }
+}
+
 fn longest_common_prefix(strings: &[&str]) -> String {
     if strings.is_empty() {
         return String::new();
@@ -199,14 +262,12 @@ fn longest_common_prefix(strings: &[&str]) -> String {
 }
 
 /// Handle a key event against the current input buffer and history.
-///
-/// When `has_permission_prompt` is true, `a` and `d` keys are intercepted
-/// for permission allow/deny before normal character input.
 pub fn handle_key(
     event: KeyEvent,
     input_buffer: &mut String,
     history: &mut InputHistory,
     has_permission_prompt: bool,
+    dynamic_commands: &[String],
 ) -> InputAction {
     match (event.modifiers, event.code) {
         // Quit (always available)
@@ -222,9 +283,9 @@ pub fn handle_key(
         (_, KeyCode::Char('a')) if has_permission_prompt => InputAction::PermissionAllow,
         (_, KeyCode::Char('d')) if has_permission_prompt => InputAction::PermissionDeny,
 
-        // Tab completion
+        // Tab completion (slash commands + @ file paths)
         (_, KeyCode::Tab) => {
-            tab_complete(input_buffer);
+            tab_complete(input_buffer, dynamic_commands);
             InputAction::None
         }
 
@@ -265,7 +326,7 @@ pub fn handle_key(
             InputAction::None
         }
 
-        // Scrolling (page-level only — up/down are for history)
+        // Scrolling
         (_, KeyCode::PageUp) => InputAction::PageUp,
         (_, KeyCode::PageDown) => InputAction::PageDown,
         (_, KeyCode::End) => InputAction::ScrollEnd,
@@ -288,21 +349,43 @@ fn parse_slash_command(text: &str) -> Option<SlashCmd> {
     }
 
     let parts: Vec<&str> = text.split_whitespace().collect();
+    let cmd = parts.first().copied().unwrap_or("");
 
-    match parts.first().copied() {
-        Some("/exit") => return Some(SlashCmd::Exit),
-        Some("/login") => return Some(SlashCmd::Login),
+    match cmd {
+        "/exit" | "/quit" => return Some(SlashCmd::Exit),
+        "/login" => return Some(SlashCmd::Login),
+        "/clear" => return Some(SlashCmd::Clear),
+        "/help" => return Some(SlashCmd::Help),
+        "/cost" => return Some(SlashCmd::Cost),
         _ => {}
     }
 
     // /persona portrait size <size>
-    if parts.len() == 4 && parts[0] == "/persona" && parts[1] == "portrait" && parts[2] == "size" {
+    if parts.len() == 4 && cmd == "/persona" && parts[1] == "portrait" && parts[2] == "size" {
         let size = parts[3].to_lowercase();
         if ["small", "medium", "large", "original"].contains(&size.as_str()) {
             return Some(SlashCmd::PortraitSize(size));
         }
     }
 
+    // Known Claude Code commands — forward as user messages
+    const FORWARD_COMMANDS: &[&str] = &[
+        "/compact",
+        "/model",
+        "/init",
+        "/review",
+        "/bug",
+        "/stats",
+        "/doctor",
+        "/config",
+        "/permissions",
+    ];
+    if FORWARD_COMMANDS.contains(&cmd) {
+        return Some(SlashCmd::ForwardToAgent(text.to_string()));
+    }
+
+    // Any other / command from system/init available_slash_commands
+    // is also forwarded (MCP, skills, etc.)
     Some(SlashCmd::Unknown(text.to_string()))
 }
 
@@ -316,8 +399,36 @@ mod tests {
     }
 
     #[test]
+    fn parse_quit_alias() {
+        assert_eq!(parse_slash_command("/quit"), Some(SlashCmd::Exit));
+    }
+
+    #[test]
     fn parse_login() {
         assert_eq!(parse_slash_command("/login"), Some(SlashCmd::Login));
+    }
+
+    #[test]
+    fn parse_clear() {
+        assert_eq!(parse_slash_command("/clear"), Some(SlashCmd::Clear));
+    }
+
+    #[test]
+    fn parse_help() {
+        assert_eq!(parse_slash_command("/help"), Some(SlashCmd::Help));
+    }
+
+    #[test]
+    fn parse_cost() {
+        assert_eq!(parse_slash_command("/cost"), Some(SlashCmd::Cost));
+    }
+
+    #[test]
+    fn parse_forward_compact() {
+        assert_eq!(
+            parse_slash_command("/compact"),
+            Some(SlashCmd::ForwardToAgent("/compact".to_string()))
+        );
     }
 
     #[test]
@@ -344,48 +455,55 @@ mod tests {
     #[test]
     fn tab_complete_single_match() {
         let mut buf = "/ex".to_string();
-        assert!(tab_complete(&mut buf));
+        assert!(tab_complete(&mut buf, &[]));
         assert_eq!(buf, "/exit");
     }
 
     #[test]
     fn tab_complete_common_prefix() {
         let mut buf = "/persona portrait size ".to_string();
-        // All four size variants match — no common prefix beyond input
-        assert!(!tab_complete(&mut buf));
+        assert!(!tab_complete(&mut buf, &[]));
     }
 
     #[test]
     fn tab_complete_partial_prefix() {
         let mut buf = "/per".to_string();
-        assert!(tab_complete(&mut buf));
+        assert!(tab_complete(&mut buf, &[]));
         assert_eq!(buf, "/persona portrait size ");
     }
 
     #[test]
     fn tab_complete_no_match() {
         let mut buf = "/xyz".to_string();
-        assert!(!tab_complete(&mut buf));
+        assert!(!tab_complete(&mut buf, &[]));
         assert_eq!(buf, "/xyz");
     }
 
     #[test]
     fn tab_complete_non_slash_ignored() {
         let mut buf = "hello".to_string();
-        assert!(!tab_complete(&mut buf));
+        assert!(!tab_complete(&mut buf, &[]));
         assert_eq!(buf, "hello");
     }
 
     #[test]
     fn tab_complete_exact_match_no_change() {
         let mut buf = "/exit".to_string();
-        assert!(!tab_complete(&mut buf));
+        assert!(!tab_complete(&mut buf, &[]));
+    }
+
+    #[test]
+    fn tab_complete_with_dynamic_commands() {
+        let dynamic = vec!["/my-custom-cmd".to_string()];
+        let mut buf = "/my".to_string();
+        assert!(tab_complete(&mut buf, &dynamic));
+        assert_eq!(buf, "/my-custom-cmd");
     }
 
     #[test]
     fn tab_complete_login() {
         let mut buf = "/lo".to_string();
-        assert!(tab_complete(&mut buf));
+        assert!(tab_complete(&mut buf, &[]));
         assert_eq!(buf, "/login");
     }
 

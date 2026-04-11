@@ -153,23 +153,59 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                 match term_event {
                     Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                         let has_perm = state.pending_permission.is_some();
-                        let action = handle_key(key, &mut state.input_buffer, &mut history, has_perm);
+                        let action = handle_key(
+                            key,
+                            &mut state.input_buffer,
+                            &mut history,
+                            has_perm,
+                            &state.available_slash_commands,
+                        );
                         match action {
                             InputAction::Quit => break Ok(()),
 
                             InputAction::SendMessage(text) if state.status.accepts_input() => {
                                 state.record_user_message(text.clone());
                                 if let Err(e) = session.send_user_message(&text).await {
-                                    state.status_message = Some(format!("Send error: {e}"));
+                                    state.set_status(format!("Send error: {e}"));
                                 }
                             }
                             InputAction::SendMessage(_) => {}
 
                             InputAction::SlashCommand(SlashCmd::Exit) => break Ok(()),
                             InputAction::SlashCommand(SlashCmd::Login) => {
-                                state.status_message = Some(
+                                state.set_status(
                                     "Auth is managed by Claude Code. Run `claude login` in a separate terminal.".to_string()
                                 );
+                            }
+                            InputAction::SlashCommand(SlashCmd::Clear) => {
+                                state.items.clear();
+                                state.set_status("Conversation cleared".to_string());
+                            }
+                            InputAction::SlashCommand(SlashCmd::Help) => {
+                                let help_text = [
+                                    "Commands: /exit /clear /cost /help /login /compact /model /persona",
+                                    "Keys: Ctrl+C quit, Ctrl+O expand tool, Shift+Tab permission mode",
+                                    "      PageUp/PageDown scroll, Up/Down history, Tab complete",
+                                ].join("\n");
+                                state.items.push(app::ConversationItem::SystemNotice { text: help_text });
+                            }
+                            InputAction::SlashCommand(SlashCmd::Cost) => {
+                                let msg = {
+                                    let m = state.metrics.lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                    format!(
+                                        "Cost: ${:.4} | Turns: {} | Tokens: {}↓ {}↑",
+                                        m.cost_usd, m.num_turns, m.input_tokens, m.output_tokens
+                                    )
+                                };
+                                state.set_status(msg);
+                            }
+                            InputAction::SlashCommand(SlashCmd::ForwardToAgent(cmd)) => {
+                                // Forward Claude Code slash commands as user messages
+                                state.record_user_message(cmd.clone());
+                                if let Err(e) = session.send_user_message(&cmd).await {
+                                    state.set_status(format!("Send error: {e}"));
+                                }
                             }
                             InputAction::SlashCommand(SlashCmd::PortraitSize(size_str)) => {
                                 if let Some(size) = PortraitSize::parse(&size_str) {
@@ -180,12 +216,17 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                                 }
                             }
                             InputAction::SlashCommand(SlashCmd::Unknown(cmd)) => {
-                                state.status_message = Some(format!("Unknown command: {cmd}"));
+                                // Forward unknown / commands to Claude Code — they
+                                // may be valid MCP/skill commands from system/init
+                                state.record_user_message(cmd.clone());
+                                if let Err(e) = session.send_user_message(&cmd).await {
+                                    state.set_status(format!("Send error: {e}"));
+                                }
                             }
 
                             InputAction::CyclePermissionMode => {
                                 state.permission_mode = state.permission_mode.next();
-                                state.status_message = Some(format!(
+                                state.set_status(format!(
                                     "Permission mode: {}",
                                     state.permission_mode.label()
                                 ));
@@ -193,16 +234,16 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
 
                             InputAction::PermissionAllow => {
                                 state.pending_permission = None;
-                                state.status_message = Some("Permission: allowed".to_string());
+                                state.set_status("Permission: allowed".to_string());
                                 if let Err(e) = session.send_permission_response(true).await {
-                                    state.status_message = Some(format!("Send error: {e}"));
+                                    state.set_status(format!("Send error: {e}"));
                                 }
                             }
                             InputAction::PermissionDeny => {
                                 state.pending_permission = None;
-                                state.status_message = Some("Permission: denied".to_string());
+                                state.set_status("Permission: denied".to_string());
                                 if let Err(e) = session.send_permission_response(false).await {
-                                    state.status_message = Some(format!("Send error: {e}"));
+                                    state.set_status(format!("Send error: {e}"));
                                 }
                             }
 
@@ -226,6 +267,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                 }
 
                 state.frame_count += 1;
+                state.tick_status_timeout();
 
                 let has_portrait = portrait_widget.as_ref().is_some_and(portrait_widget::PortraitWidget::has_image);
                 let has_perm_prompt = state.pending_permission.is_some();
