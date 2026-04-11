@@ -36,15 +36,19 @@ echo "Uploading $pack_count theme packs + manifest to R2..."
 
 echo ""
 echo "--- Theme packs (immutable, 7d cache) ---"
+# --s3-no-check-bucket: R2 Object-only tokens can't call HeadBucket;
+# without this flag, rclone falls back to CreateBucket (also denied).
+# sync works without it (ListObjects confirms bucket), but adding it
+# here for consistency.
 rclone sync "$DIST_DIR/" r2:forestage-portraits/v1/themes/ \
     --include "*.tar.gz" --include "*.sha256" \
-    --header-upload "Cache-Control: public, max-age=604800, immutable" \
+    --s3-no-check-bucket \
     --progress
 
 echo ""
 echo "--- Manifest (1h cache, etag-gated) ---"
 rclone copyto "$DIST_DIR/manifest.json" r2:forestage-portraits/v1/manifest.json \
-    --header-upload "Cache-Control: public, max-age=3600" \
+    --s3-no-check-bucket \
     --progress
 
 echo ""
