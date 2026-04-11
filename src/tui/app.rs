@@ -243,13 +243,10 @@ pub fn render_conversation(frame: &mut Frame, state: &mut AppState, area: Rect) 
 
     let text = Text::from(lines.clone());
     let content_height = text.height() as u16;
-    state
-        .scroll
-        .set_viewport_height(area.height.saturating_sub(2)); // account for borders
+    state.scroll.set_viewport_height(area.height);
     state.scroll.set_content_height(content_height);
 
     let paragraph = Paragraph::new(text)
-        .block(Block::default().borders(Borders::ALL).title(" aclaude "))
         .wrap(Wrap { trim: false })
         .scroll((state.scroll.offset, 0));
 
@@ -271,7 +268,7 @@ pub fn render_input(frame: &mut Frame, state: &AppState, area: Rect) {
         Span::styled("> ", Style::default().fg(Color::Green)),
         display_text,
     ]))
-    .block(Block::default().borders(Borders::ALL));
+    .block(Block::default().borders(Borders::TOP | Borders::BOTTOM));
 
     frame.render_widget(input, area);
 }

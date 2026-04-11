@@ -22,7 +22,7 @@ use ratatui::backend::CrosstermBackend;
 use tokio::time::{Duration, interval};
 
 use self::app::{AppState, PortraitSize};
-use self::input::{InputAction, SlashCmd, handle_key};
+use self::input::{InputAction, InputHistory, SlashCmd, handle_key};
 use self::layout::compute_layout;
 use self::portrait_widget::PortraitWidget;
 use crate::bridge;
@@ -73,8 +73,9 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
     let mut session = bridge::Session::spawn(config).await?;
     let metrics = session.metrics();
 
-    // App state
+    // App state and input history
     let mut state = AppState::new(metrics);
+    let mut history = InputHistory::new();
 
     // Terminal event reader channel
     let (term_tx, mut term_rx) = tokio::sync::mpsc::channel::<Event>(64);
@@ -109,7 +110,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
             term_event = term_rx.recv() => {
                 match term_event {
                     Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
-                        match handle_key(key, &mut state.input_buffer) {
+                        match handle_key(key, &mut state.input_buffer, &mut history) {
                             InputAction::Quit => break Ok(()),
                             InputAction::SendMessage(text) => {
                                 state.record_user_message(text.clone());
@@ -128,8 +129,6 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                             InputAction::SlashCommand(SlashCmd::Unknown(cmd)) => {
                                 state.status_message = Some(format!("Unknown command: {cmd}"));
                             }
-                            InputAction::ScrollUp => state.scroll.scroll_up(),
-                            InputAction::ScrollDown => state.scroll.scroll_down(),
                             InputAction::PageUp => state.scroll.page_up(),
                             InputAction::PageDown => state.scroll.page_down(),
                             InputAction::ScrollEnd => state.scroll.scroll_to_bottom(),
@@ -154,13 +153,14 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                         has_portrait,
                     );
 
+                    // Conversation first (full width), then portrait overlays on top
                     app::render_conversation(frame, &mut state, tui_layout.conversation);
-                    app::render_input(frame, &state, tui_layout.input);
-                    app::render_status(frame, &state, tui_layout.status);
-
                     if let Some(pw) = &mut portrait_widget {
                         pw.render(frame, tui_layout.portrait);
                     }
+
+                    app::render_input(frame, &state, tui_layout.input);
+                    app::render_status(frame, &state, tui_layout.status);
                 }).ok();
             }
         }
