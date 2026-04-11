@@ -8,7 +8,7 @@ Follows the kos process: Orient → Ideate → Question → Probe → Harvest �
 Authoritative graph: `_kos/nodes/`.
 Cross-repo questions belong in the orchestrator's charter.
 
-Last updated: 2026-04-11 (harvest: TUI prototype, session maturity, terminal images)
+Last updated: 2026-04-11 (session-013: rename to forestage, portrait distribution infra)
 
 ---
 
