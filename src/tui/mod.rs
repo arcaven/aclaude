@@ -11,6 +11,7 @@ pub mod portrait_widget;
 pub mod scroll;
 
 use std::io;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::execute;
@@ -19,7 +20,7 @@ use crossterm::terminal::{
 };
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use tokio::time::{Duration, interval};
+use tokio::time::interval;
 
 use self::app::{AppState, PortraitSize};
 use self::input::{InputAction, InputHistory, SlashCmd, handle_key};
@@ -30,11 +31,47 @@ use crate::config::AclaudeConfig;
 use crate::error::Result;
 use crate::persona;
 use crate::portrait;
+use crate::protocol_ext::BridgeEvent;
 
-/// Run the TUI prototype.
+/// Text batcher — buffers streaming text deltas for smooth rendering.
 ///
-/// Sets up the terminal, spawns the Claude Code bridge subprocess,
-/// and runs the event loop until quit.
+/// Coalesces consecutive TextDelta events and flushes on a 45ms timer
+/// or 2KB size threshold. Prevents per-token re-renders at 20fps.
+/// Pattern from pi_agent_rust's UiStreamDeltaBatcher.
+struct TextBatcher {
+    buffer: String,
+    last_flush: Instant,
+}
+
+impl TextBatcher {
+    fn new() -> Self {
+        Self {
+            buffer: String::new(),
+            last_flush: Instant::now(),
+        }
+    }
+
+    /// Push a text delta. Returns the flushed text if threshold met.
+    fn push(&mut self, text: &str) -> Option<String> {
+        self.buffer.push_str(text);
+        if self.buffer.len() >= 2048 || self.last_flush.elapsed() >= Duration::from_millis(45) {
+            self.flush()
+        } else {
+            None
+        }
+    }
+
+    /// Force flush any remaining buffer.
+    fn flush(&mut self) -> Option<String> {
+        if self.buffer.is_empty() {
+            return None;
+        }
+        self.last_flush = Instant::now();
+        Some(std::mem::take(&mut self.buffer))
+    }
+}
+
+/// Run the TUI.
 pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
     // Resolve portrait
     let theme = persona::load_theme(&config.persona.theme)?;
@@ -73,9 +110,10 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
     let mut session = bridge::Session::spawn(config).await?;
     let metrics = session.metrics();
 
-    // App state and input history
+    // App state, input history, text batcher
     let mut state = AppState::new(metrics);
     let mut history = InputHistory::new();
+    let mut text_batcher = TextBatcher::new();
 
     // Terminal event reader channel
     let (term_tx, mut term_rx) = tokio::sync::mpsc::channel::<Event>(64);
@@ -88,7 +126,7 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
     });
 
     // 20fps tick
-    let mut tick = interval(Duration::from_millis(50));
+    let mut tick = interval(std::time::Duration::from_millis(50));
 
     // Event loop
     let result = loop {
@@ -96,11 +134,24 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
             // Bridge events (NDJSON from subprocess)
             bridge_event = session.event_rx().recv() => {
                 match bridge_event {
+                    Some(BridgeEvent::TextDelta { text }) => {
+                        // Buffer text deltas — flush on threshold
+                        if let Some(flushed) = text_batcher.push(&text) {
+                            state.apply_event(&BridgeEvent::TextDelta { text: flushed });
+                        }
+                    }
                     Some(event) => {
+                        // Non-text events flush the batcher immediately
+                        if let Some(flushed) = text_batcher.flush() {
+                            state.apply_event(&BridgeEvent::TextDelta { text: flushed });
+                        }
                         state.apply_event(&event);
                     }
                     None => {
-                        // Subprocess exited
+                        // Subprocess exited — flush remaining
+                        if let Some(flushed) = text_batcher.flush() {
+                            state.apply_event(&BridgeEvent::TextDelta { text: flushed });
+                        }
                         break Ok(());
                     }
                 }
@@ -110,13 +161,19 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
             term_event = term_rx.recv() => {
                 match term_event {
                     Some(Event::Key(key)) if key.kind == KeyEventKind::Press => {
-                        match handle_key(key, &mut state.input_buffer, &mut history) {
+                        // Gate input by status — only Ready accepts typed input
+                        // (Ctrl+C and slash commands always work)
+                        let action = handle_key(key, &mut state.input_buffer, &mut history);
+                        match action {
                             InputAction::Quit => break Ok(()),
-                            InputAction::SendMessage(text) => {
+                            InputAction::SendMessage(text) if state.status.accepts_input() => {
                                 state.record_user_message(text.clone());
                                 if let Err(e) = session.send_user_message(&text).await {
                                     state.status_message = Some(format!("Send error: {e}"));
                                 }
+                            }
+                            InputAction::SendMessage(_) => {
+                                // Input not accepted in current state
                             }
                             InputAction::SlashCommand(SlashCmd::Exit) => break Ok(()),
                             InputAction::SlashCommand(SlashCmd::Login) => {
@@ -142,15 +199,22 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                         }
                     }
                     Some(Event::Resize(_, _)) => {
-                        // Terminal resized — next draw will pick up new size
+                        // Terminal resized — next draw picks up new size
                     }
                     Some(_) => {}
                     None => break Ok(()),
                 }
             }
 
-            // Tick — render frame
+            // Tick — render frame + flush batcher on timer
             _ = tick.tick() => {
+                // Flush any buffered text on tick (45ms timer threshold)
+                if let Some(flushed) = text_batcher.flush() {
+                    state.apply_event(&BridgeEvent::TextDelta { text: flushed });
+                }
+
+                state.frame_count += 1;
+
                 let has_portrait = portrait_widget.as_ref().is_some_and(portrait_widget::PortraitWidget::has_image);
                 terminal.draw(|frame| {
                     let tui_layout = compute_layout(
@@ -159,7 +223,6 @@ pub async fn run_tui(config: &AclaudeConfig) -> Result<()> {
                         has_portrait,
                     );
 
-                    // Conversation first (full width), then portrait overlays on top
                     app::render_conversation(frame, &mut state, tui_layout.conversation);
                     if let Some(pw) = &mut portrait_widget {
                         pw.render(frame, tui_layout.portrait);

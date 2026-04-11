@@ -1,10 +1,11 @@
 //! TUI application state and rendering.
 //!
-//! `AppState` owns the conversation history, streaming state, and input buffer.
-//! Render functions draw the conversation viewport, input area, and status bar.
-//! Metrics are read from the shared bridge `Arc<Mutex<SessionMetrics>>`.
+//! `AppState` owns the conversation as a structured turn model, driven by
+//! an `AppStatus` state machine. Render functions draw the conversation
+//! viewport, input area, and status bar using a `RenderCtx` for purity.
 
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -15,6 +16,8 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use super::scroll::ScrollState;
 use crate::protocol::ClaudeEvent;
 use crate::protocol_ext::{BridgeEvent, SessionMetrics};
+
+// ── Types ────────────────────────────────────────────────────────────────
 
 /// Portrait size options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,211 +40,527 @@ impl PortraitSize {
     }
 }
 
-/// A message in the conversation history.
-#[derive(Debug)]
-pub struct Message {
-    pub role: MessageRole,
-    pub text: String,
+/// Application status — drives visual feedback and input gating.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppStatus {
+    /// Waiting for system/init from subprocess.
+    Connecting,
+    /// Idle, accepting user input.
+    Ready,
+    /// Assistant turn started, no content yet.
+    Thinking,
+    /// Text deltas arriving.
+    Streaming,
+    /// Tool call in progress.
+    ToolRunning,
+    /// Fatal error.
+    Error,
 }
 
-#[derive(Debug)]
-pub enum MessageRole {
-    User,
-    Assistant,
-    System,
+impl AppStatus {
+    /// Whether the input field should accept typed characters.
+    pub fn accepts_input(self) -> bool {
+        self == Self::Ready
+    }
+
+    /// Spinner character for non-ready states.
+    pub fn spinner(self, frame_count: u64) -> Option<&'static str> {
+        const FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        match self {
+            Self::Connecting | Self::Thinking | Self::Streaming | Self::ToolRunning => {
+                Some(FRAMES[(frame_count as usize) % FRAMES.len()])
+            }
+            _ => None,
+        }
+    }
 }
 
-/// A tool call entry for display.
+// ── Conversation Model ───────────────────────────────────────────────────
+
+/// A single item in the conversation.
 #[derive(Debug)]
-pub struct ToolCallEntry {
+pub enum ConversationItem {
+    /// User-sent message.
+    UserMessage { text: String },
+    /// One assistant turn (may contain text, tool calls, thinking).
+    AssistantTurn {
+        blocks: Vec<TurnBlock>,
+        is_active: bool,
+    },
+    /// Synthetic system notice (compact markers, errors).
+    SystemNotice { text: String },
+}
+
+/// A block within an assistant turn.
+#[derive(Debug)]
+pub enum TurnBlock {
+    /// Text content (streaming or committed).
+    Text { content: String, is_streaming: bool },
+    /// A tool call with lifecycle tracking.
+    ToolCall(ToolCallItem),
+    /// A thinking block (streaming or committed).
+    Thinking { content: String, is_streaming: bool },
+}
+
+/// Tool call lifecycle state.
+#[derive(Debug)]
+pub struct ToolCallItem {
+    pub id: String,
     pub name: String,
+    /// Accumulated input_json_delta chunks.
+    pub input_json: String,
+    /// First 200 chars of tool result.
+    pub result_preview: String,
     pub status: ToolStatus,
+    pub started_at: Instant,
+    pub is_expanded: bool,
 }
 
+/// Tool execution status.
 #[derive(Debug)]
 pub enum ToolStatus {
+    /// Input JSON still arriving via deltas.
+    InputStreaming,
+    /// Tool executing (content_block_stop seen, awaiting result).
     Running,
-    Complete,
+    /// Tool completed successfully.
+    Complete { elapsed_secs: f64 },
+    /// Tool errored.
+    Error { message: String },
 }
+
+// ── App State ────────────────────────────────────────────────────────────
 
 /// Application state for the TUI.
 pub struct AppState {
-    /// Conversation history.
-    pub messages: Vec<Message>,
-    /// Current streaming text (partial response being assembled).
-    pub streaming_text: String,
-    /// Tool calls in the current turn.
-    pub tool_calls: Vec<ToolCallEntry>,
+    /// Structured conversation history.
+    pub items: Vec<ConversationItem>,
     /// User input buffer.
     pub input_buffer: String,
     /// Portrait size setting.
     pub portrait_size: PortraitSize,
     /// Shared metrics from bridge.
     pub metrics: Arc<Mutex<SessionMetrics>>,
-    /// Whether we're waiting for the first response after sending.
-    pub is_waiting: bool,
+    /// Current application status.
+    pub status: AppStatus,
     /// Scroll state for the conversation viewport.
     pub scroll: ScrollState,
     /// Status message (rate limit notices, errors).
     pub status_message: Option<String>,
+    /// Available slash commands from system/init.
+    pub available_slash_commands: Vec<String>,
+    /// Whether to show thinking blocks.
+    pub show_thinking: bool,
+    /// Frame counter for spinner animation.
+    pub frame_count: u64,
 }
 
 impl AppState {
     pub fn new(metrics: Arc<Mutex<SessionMetrics>>) -> Self {
         Self {
-            messages: Vec::new(),
-            streaming_text: String::new(),
-            tool_calls: Vec::new(),
+            items: Vec::new(),
             input_buffer: String::new(),
             portrait_size: PortraitSize::Medium,
             metrics,
-            is_waiting: false,
+            status: AppStatus::Connecting,
             scroll: ScrollState::default(),
             status_message: None,
+            available_slash_commands: Vec::new(),
+            show_thinking: false,
+            frame_count: 0,
         }
     }
 
     /// Apply a bridge event to update state.
     pub fn apply_event(&mut self, event: &BridgeEvent) {
         match event {
+            BridgeEvent::SessionInit {
+                available_slash_commands,
+                ..
+            } => {
+                self.status = AppStatus::Ready;
+                self.available_slash_commands = available_slash_commands.clone();
+            }
+            BridgeEvent::Core(ClaudeEvent::System { .. }) => {
+                // Legacy system event without init subtype
+                if self.status == AppStatus::Connecting {
+                    self.status = AppStatus::Ready;
+                }
+            }
+            BridgeEvent::MessageStart => {
+                self.status = AppStatus::Thinking;
+                self.ensure_active_turn();
+            }
             BridgeEvent::TextDelta { text } => {
-                self.is_waiting = false;
-                self.streaming_text.push_str(text);
+                self.status = AppStatus::Streaming;
+                self.append_streaming_text(text);
+            }
+            BridgeEvent::ToolCallStart { id, name } => {
+                self.status = AppStatus::ToolRunning;
+                self.commit_streaming_text();
+                self.ensure_active_turn();
+                if let Some(ConversationItem::AssistantTurn { blocks, .. }) = self.items.last_mut()
+                {
+                    blocks.push(TurnBlock::ToolCall(ToolCallItem {
+                        id: id.clone(),
+                        name: name.clone(),
+                        input_json: String::new(),
+                        result_preview: String::new(),
+                        status: ToolStatus::InputStreaming,
+                        started_at: Instant::now(),
+                        is_expanded: false,
+                    }));
+                }
+            }
+            BridgeEvent::ToolInputDelta { partial_json } => {
+                if let Some(tool) = self.last_tool_mut() {
+                    tool.input_json.push_str(partial_json);
+                }
+            }
+            BridgeEvent::ToolCallStop => {
+                if let Some(tool) = self.last_tool_mut() {
+                    tool.status = ToolStatus::Running;
+                }
+            }
+            BridgeEvent::ToolResult {
+                tool_use_id,
+                content,
+            } => {
+                // Find tool by id and mark complete
+                if let Some(tool) = self.find_tool_mut(tool_use_id) {
+                    let elapsed = tool.started_at.elapsed().as_secs_f64();
+                    tool.status = ToolStatus::Complete {
+                        elapsed_secs: elapsed,
+                    };
+                    tool.result_preview = content.chars().take(200).collect();
+                }
+                // After tool result, Claude may continue streaming text
+                self.status = AppStatus::Streaming;
+            }
+            BridgeEvent::ThinkingStart => {
+                self.ensure_active_turn();
+                if let Some(ConversationItem::AssistantTurn { blocks, .. }) = self.items.last_mut()
+                {
+                    blocks.push(TurnBlock::Thinking {
+                        content: String::new(),
+                        is_streaming: true,
+                    });
+                }
+            }
+            BridgeEvent::ThinkingDelta { text } => {
+                if let Some(thinking) = self.last_thinking_mut() {
+                    thinking.push_str(text);
+                }
+            }
+            BridgeEvent::ThinkingStop => {
+                // Mark thinking as committed
+                if let Some(ConversationItem::AssistantTurn { blocks, .. }) = self.items.last_mut()
+                {
+                    for block in blocks.iter_mut().rev() {
+                        if let TurnBlock::Thinking { is_streaming, .. } = block {
+                            *is_streaming = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            BridgeEvent::MessageStop { .. } | BridgeEvent::Core(ClaudeEvent::Result { .. }) => {
+                self.commit_streaming_text();
+                self.finalize_turn();
+                self.status = AppStatus::Ready;
             }
             BridgeEvent::Core(ClaudeEvent::Assistant { message }) => {
-                self.is_waiting = false;
-                // If we have accumulated streaming text and this is a complete
-                // message, commit it
+                // Handle complete assistant messages (non-streaming mode)
+                if self.status == AppStatus::Connecting || self.status == AppStatus::Ready {
+                    self.status = AppStatus::Streaming;
+                }
+                self.ensure_active_turn();
                 for block in &message.content {
                     match block.block_type.as_str() {
                         "text" => {
                             if let Some(text) = &block.text {
-                                // If streaming text matches, it's already accumulated.
-                                // If not (non-streaming mode), use the block text.
-                                if self.streaming_text.is_empty() {
-                                    self.streaming_text.push_str(text);
-                                }
+                                self.append_streaming_text(text);
                             }
                         }
                         "tool_use" => {
                             if let Some(name) = &block.name {
-                                self.tool_calls.push(ToolCallEntry {
-                                    name: name.clone(),
-                                    status: ToolStatus::Running,
-                                });
+                                let id = block.id.clone().unwrap_or_default();
+                                if let Some(ConversationItem::AssistantTurn { blocks, .. }) =
+                                    self.items.last_mut()
+                                {
+                                    blocks.push(TurnBlock::ToolCall(ToolCallItem {
+                                        id,
+                                        name: name.clone(),
+                                        input_json: String::new(),
+                                        result_preview: String::new(),
+                                        status: ToolStatus::Running,
+                                        started_at: Instant::now(),
+                                        is_expanded: false,
+                                    }));
+                                }
                             }
                         }
                         _ => {}
                     }
                 }
             }
-            BridgeEvent::ToolResult { .. } => {
-                // Mark the last running tool as complete
-                if let Some(last) = self.tool_calls.last_mut() {
-                    if matches!(last.status, ToolStatus::Running) {
-                        last.status = ToolStatus::Complete;
-                    }
-                }
-            }
-            BridgeEvent::Core(ClaudeEvent::Result { .. }) => {
-                // Session ended — commit any remaining streaming text
-                self.commit_streaming_text();
-                self.is_waiting = false;
-            }
             BridgeEvent::RateLimit { status, .. } => {
                 self.status_message = Some(format!("Rate limit: {status}"));
             }
-            BridgeEvent::Core(ClaudeEvent::System { .. }) => {}
+            BridgeEvent::PermissionRequest { tool, description } => {
+                self.status_message = Some(format!("Permission requested: {tool} — {description}"));
+            }
             _ => {}
         }
     }
 
-    /// Commit accumulated streaming text as an assistant message.
-    pub fn commit_streaming_text(&mut self) {
-        if !self.streaming_text.is_empty() {
-            let text = std::mem::take(&mut self.streaming_text);
-            self.messages.push(Message {
-                role: MessageRole::Assistant,
-                text,
+    /// Record a sent user message and transition to Thinking.
+    pub fn record_user_message(&mut self, text: String) {
+        self.commit_streaming_text();
+        self.finalize_turn();
+        self.items.push(ConversationItem::UserMessage { text });
+        self.status = AppStatus::Thinking;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+
+    /// Ensure there's an active assistant turn at the end of items.
+    fn ensure_active_turn(&mut self) -> &mut ConversationItem {
+        if !matches!(
+            self.items.last(),
+            Some(ConversationItem::AssistantTurn {
+                is_active: true,
+                ..
+            })
+        ) {
+            self.items.push(ConversationItem::AssistantTurn {
+                blocks: Vec::new(),
+                is_active: true,
             });
-            self.tool_calls.clear();
+        }
+        self.items.last_mut().expect("just pushed")
+    }
+
+    /// Append text to the current streaming text block, creating one if needed.
+    fn append_streaming_text(&mut self, text: &str) {
+        let turn = self.ensure_active_turn();
+        if let ConversationItem::AssistantTurn { blocks, .. } = turn {
+            // Find last streaming text block or create one
+            let needs_new = blocks.last().is_none_or(|b| {
+                !matches!(
+                    b,
+                    TurnBlock::Text {
+                        is_streaming: true,
+                        ..
+                    }
+                )
+            });
+            if needs_new {
+                blocks.push(TurnBlock::Text {
+                    content: String::new(),
+                    is_streaming: true,
+                });
+            }
+            if let Some(TurnBlock::Text { content, .. }) = blocks.last_mut() {
+                content.push_str(text);
+            }
         }
     }
 
-    /// Record a sent user message.
-    pub fn record_user_message(&mut self, text: String) {
-        // Commit any previous assistant response
-        self.commit_streaming_text();
-        self.messages.push(Message {
-            role: MessageRole::User,
-            text,
-        });
-        self.is_waiting = true;
+    /// Commit any streaming text block (mark as not streaming).
+    fn commit_streaming_text(&mut self) {
+        if let Some(ConversationItem::AssistantTurn { blocks, .. }) = self.items.last_mut() {
+            for block in blocks.iter_mut() {
+                if let TurnBlock::Text {
+                    is_streaming,
+                    content,
+                    ..
+                } = block
+                {
+                    if *is_streaming && !content.is_empty() {
+                        *is_streaming = false;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Mark the current turn as finalized.
+    fn finalize_turn(&mut self) {
+        if let Some(ConversationItem::AssistantTurn {
+            is_active, blocks, ..
+        }) = self.items.last_mut()
+        {
+            // Remove empty text blocks
+            blocks.retain(|b| !matches!(b, TurnBlock::Text { content, .. } if content.is_empty()));
+            *is_active = false;
+        }
+    }
+
+    /// Get mutable reference to the last tool call in the active turn.
+    fn last_tool_mut(&mut self) -> Option<&mut ToolCallItem> {
+        if let Some(ConversationItem::AssistantTurn { blocks, .. }) = self.items.last_mut() {
+            blocks.iter_mut().rev().find_map(|b| {
+                if let TurnBlock::ToolCall(tool) = b {
+                    Some(tool)
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Find a tool call by ID in the active turn.
+    fn find_tool_mut(&mut self, tool_use_id: &str) -> Option<&mut ToolCallItem> {
+        if let Some(ConversationItem::AssistantTurn { blocks, .. }) = self.items.last_mut() {
+            blocks.iter_mut().find_map(|b| {
+                if let TurnBlock::ToolCall(tool) = b {
+                    if tool.id == tool_use_id {
+                        return Some(tool);
+                    }
+                }
+                None
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Get mutable reference to the last thinking block's content.
+    fn last_thinking_mut(&mut self) -> Option<&mut String> {
+        if let Some(ConversationItem::AssistantTurn { blocks, .. }) = self.items.last_mut() {
+            blocks.iter_mut().rev().find_map(|b| {
+                if let TurnBlock::Thinking { content, .. } = b {
+                    Some(content)
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        }
     }
 }
+
+// ── Rendering ────────────────────────────────────────────────────────────
 
 /// Render the conversation viewport.
 pub fn render_conversation(frame: &mut Frame, state: &mut AppState, area: Rect) {
     let mut lines: Vec<Line> = Vec::new();
 
-    // Render committed messages
-    for msg in &state.messages {
-        let (prefix, style) = match msg.role {
-            MessageRole::User => (
-                "You: ",
-                Style::default()
+    for item in &state.items {
+        match item {
+            ConversationItem::UserMessage { text } => {
+                let style = Style::default()
                     .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            MessageRole::Assistant => ("", Style::default().fg(Color::White)),
-            MessageRole::System => ("System: ", Style::default().fg(Color::Yellow)),
-        };
-
-        lines.push(Line::from(vec![Span::styled(prefix, style)]));
-        for text_line in msg.text.lines() {
-            lines.push(Line::from(Span::styled(text_line.to_string(), style)));
+                    .add_modifier(Modifier::BOLD);
+                lines.push(Line::from(Span::styled("You: ", style)));
+                for text_line in text.lines() {
+                    lines.push(Line::from(Span::styled(text_line.to_string(), style)));
+                }
+                lines.push(Line::from(""));
+            }
+            ConversationItem::AssistantTurn { blocks, is_active } => {
+                for block in blocks {
+                    match block {
+                        TurnBlock::Text {
+                            content,
+                            is_streaming,
+                        } => {
+                            let style = Style::default().fg(Color::White);
+                            for text_line in content.lines() {
+                                lines.push(Line::from(Span::styled(text_line.to_string(), style)));
+                            }
+                            if *is_streaming {
+                                lines.push(Line::from(Span::styled(
+                                    "▌",
+                                    Style::default().fg(Color::Green),
+                                )));
+                            }
+                        }
+                        TurnBlock::ToolCall(tool) => {
+                            render_tool_call_line(&mut lines, tool, state.frame_count);
+                        }
+                        TurnBlock::Thinking {
+                            content,
+                            is_streaming,
+                        } => {
+                            if state.show_thinking {
+                                let style = Style::default()
+                                    .fg(Color::DarkGray)
+                                    .add_modifier(Modifier::ITALIC);
+                                lines.push(Line::from(Span::styled(
+                                    "┌─ Thinking ─",
+                                    Style::default().fg(Color::DarkGray),
+                                )));
+                                for text_line in content.lines().take(20) {
+                                    lines.push(Line::from(Span::styled(
+                                        format!("│ {text_line}"),
+                                        style,
+                                    )));
+                                }
+                                if content.lines().count() > 20 {
+                                    lines.push(Line::from(Span::styled(
+                                        format!(
+                                            "│ [... {} more lines]",
+                                            content.lines().count() - 20
+                                        ),
+                                        style,
+                                    )));
+                                }
+                                if *is_streaming {
+                                    lines.push(Line::from(Span::styled("│ ▌", style)));
+                                }
+                                lines.push(Line::from(Span::styled(
+                                    "└─────────────",
+                                    Style::default().fg(Color::DarkGray),
+                                )));
+                            } else if !content.is_empty() {
+                                let char_count = if content.len() >= 1000 {
+                                    format!("{:.1}k", content.len() as f64 / 1000.0)
+                                } else {
+                                    format!("{}", content.len())
+                                };
+                                let label = if *is_streaming {
+                                    format!("▸ Thinking ({char_count} chars)...")
+                                } else {
+                                    format!("▸ Thinking ({char_count} chars)")
+                                };
+                                lines.push(Line::from(Span::styled(
+                                    label,
+                                    Style::default().fg(Color::DarkGray),
+                                )));
+                            }
+                        }
+                    }
+                }
+                // Thinking indicator when turn is active but no content yet
+                if *is_active && blocks.is_empty() && state.status == AppStatus::Thinking {
+                    let spinner = state.status.spinner(state.frame_count).unwrap_or("⠋");
+                    lines.push(Line::from(Span::styled(
+                        format!("{spinner} Thinking..."),
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::ITALIC),
+                    )));
+                }
+                if !is_active {
+                    lines.push(Line::from(""));
+                }
+            }
+            ConversationItem::SystemNotice { text } => {
+                lines.push(Line::from(Span::styled(
+                    text.clone(),
+                    Style::default().fg(Color::Yellow),
+                )));
+                lines.push(Line::from(""));
+            }
         }
-        lines.push(Line::from(""));
     }
 
-    // Render active tool calls
-    for tool in &state.tool_calls {
-        let indicator = match tool.status {
-            ToolStatus::Running => "⟳",
-            ToolStatus::Complete => "✓",
-        };
-        lines.push(Line::from(Span::styled(
-            format!("  {indicator} {}", tool.name),
-            Style::default().fg(Color::DarkGray),
-        )));
-    }
-
-    // Render streaming text
-    if !state.streaming_text.is_empty() {
-        for text_line in state.streaming_text.lines() {
-            lines.push(Line::from(Span::styled(
-                text_line.to_string(),
-                Style::default().fg(Color::White),
-            )));
-        }
-        // Streaming cursor
-        lines.push(Line::from(Span::styled(
-            "▌",
-            Style::default().fg(Color::Green),
-        )));
-    }
-
-    // Waiting indicator
-    if state.is_waiting {
-        lines.push(Line::from(Span::styled(
-            "Thinking...",
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::ITALIC),
-        )));
-    }
-
-    let text = Text::from(lines.clone());
+    let text = Text::from(lines);
     let content_height = text.height() as u16;
     state.scroll.set_viewport_height(area.height);
     state.scroll.set_content_height(content_height);
@@ -253,10 +572,90 @@ pub fn render_conversation(frame: &mut Frame, state: &mut AppState, area: Rect) 
     frame.render_widget(paragraph, area);
 }
 
+/// Render a single tool call line in the conversation.
+fn render_tool_call_line(lines: &mut Vec<Line>, tool: &ToolCallItem, frame_count: u64) {
+    let elapsed = tool.started_at.elapsed().as_secs_f64();
+
+    match &tool.status {
+        ToolStatus::InputStreaming => {
+            let spinner = AppStatus::ToolRunning.spinner(frame_count).unwrap_or("⟳");
+            let preview: String = tool.input_json.chars().take(60).collect();
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {spinner} {} ", tool.name),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    format!("[{elapsed:.1}s] "),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(format!("{preview}▌"), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        ToolStatus::Running => {
+            let spinner = AppStatus::ToolRunning.spinner(frame_count).unwrap_or("⟳");
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {spinner} {} ", tool.name),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::styled(
+                    format!("[{elapsed:.1}s]"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+        ToolStatus::Complete { elapsed_secs } => {
+            let preview: String = if tool.result_preview.is_empty() {
+                "done".to_string()
+            } else {
+                tool.result_preview
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(60)
+                    .collect()
+            };
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  ✓ {} ", tool.name),
+                    Style::default().fg(Color::Green),
+                ),
+                Span::styled(
+                    format!("[{elapsed_secs:.1}s] "),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(preview, Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+        ToolStatus::Error { message } => {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  ✗ {} ", tool.name),
+                    Style::default().fg(Color::Red),
+                ),
+                Span::styled(
+                    format!("[{elapsed:.1}s] "),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(message.clone(), Style::default().fg(Color::Red)),
+            ]));
+        }
+    }
+}
+
 /// Render the input area.
 pub fn render_input(frame: &mut Frame, state: &AppState, area: Rect) {
+    let placeholder = match state.status {
+        AppStatus::Connecting => "Connecting...",
+        AppStatus::Ready => "Type a message...",
+        AppStatus::Thinking | AppStatus::Streaming | AppStatus::ToolRunning => "Waiting...",
+        AppStatus::Error => "Error — press Ctrl+C to exit",
+    };
+
     let display_text = if state.input_buffer.is_empty() {
-        Span::styled("Type a message...", Style::default().fg(Color::DarkGray))
+        Span::styled(placeholder, Style::default().fg(Color::DarkGray))
     } else {
         Span::styled(
             state.input_buffer.as_str(),
@@ -272,10 +671,9 @@ pub fn render_input(frame: &mut Frame, state: &AppState, area: Rect) {
 
     frame.render_widget(input, area);
 
-    // Position cursor after the input text (inside the bordered area)
-    // +1 for top border, +2 for "> " prefix
+    // Cursor
     let cursor_x = area.x + 2 + state.input_buffer.len() as u16;
-    let cursor_y = area.y + 1; // +1 for top border
+    let cursor_y = area.y + 1;
     frame.set_cursor_position((cursor_x.min(area.x + area.width - 1), cursor_y));
 }
 
@@ -287,6 +685,14 @@ pub fn render_status(frame: &mut Frame, state: &AppState, area: Rect) {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     let mut parts: Vec<Span> = Vec::new();
+
+    // Status indicator
+    if let Some(spinner) = state.status.spinner(state.frame_count) {
+        parts.push(Span::styled(
+            format!("{spinner} "),
+            Style::default().fg(Color::Yellow),
+        ));
+    }
 
     // Model
     if !m.model.is_empty() {
@@ -335,6 +741,17 @@ pub fn render_status(frame: &mut Frame, state: &AppState, area: Rect) {
             format!("⟳ {tool}"),
             Style::default().fg(Color::Cyan),
         ));
+    }
+
+    // Thinking chars
+    if m.thinking_chars > 0 {
+        parts.push(Span::raw(" │ "));
+        let label = if m.thinking_chars >= 1000 {
+            format!("think:{:.1}k", m.thinking_chars as f64 / 1000.0)
+        } else {
+            format!("think:{}", m.thinking_chars)
+        };
+        parts.push(Span::styled(label, Style::default().fg(Color::DarkGray)));
     }
 
     // Rate limit

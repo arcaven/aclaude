@@ -1,8 +1,8 @@
 //! Session bridge — async subprocess lifecycle for Claude Code.
 //!
 //! Spawns `claude` as a headless subprocess with bidirectional NDJSON streaming.
-//! Parses events, updates `SessionMetrics`, and sends events to consumers via
-//! an mpsc channel. The bridge is TUI-agnostic — no ratatui types.
+//! Parses events via `BridgeParser`, updates `SessionMetrics`, and sends events
+//! to consumers via an mpsc channel. The bridge is TUI-agnostic — no ratatui types.
 //!
 //! Both human TUI and future marvel diagnostic view consume the same bridge.
 //! tmux statusline updates happen here so any consumer gets status for free.
@@ -17,16 +17,11 @@ use crate::config::AclaudeConfig;
 use crate::error::{AclaudeError, Result};
 use crate::persona;
 use crate::protocol::ClaudeEvent;
-use crate::protocol_ext::{self, BridgeEvent, SessionMetrics};
+use crate::protocol_ext::{BridgeEvent, BridgeParser, SessionMetrics};
 use crate::session::find_claude;
 use crate::statusline;
 
 /// A running Claude Code subprocess with event streaming.
-///
-/// The bridge owns the child process and provides:
-/// - An event receiver (mpsc) for consuming NDJSON events
-/// - Shared metrics via `Arc<Mutex<SessionMetrics>>`
-/// - Methods to send user messages and shut down
 pub struct Session {
     child: Child,
     event_rx: mpsc::Receiver<BridgeEvent>,
@@ -36,12 +31,6 @@ pub struct Session {
 
 impl Session {
     /// Spawn a Claude Code subprocess with NDJSON streaming.
-    ///
-    /// Starts `claude` with `--output-format stream-json --input-format stream-json
-    /// --verbose --include-partial-messages` and the persona system prompt.
-    ///
-    /// Returns a `Session` that produces `BridgeEvent`s via its event receiver
-    /// and accepts user messages via `send_user_message`.
     pub async fn spawn(config: &AclaudeConfig) -> Result<Self> {
         let claude_path = find_claude()?;
 
@@ -56,6 +45,7 @@ impl Session {
             .args(["--input-format", "stream-json"])
             .args(["--verbose"])
             .args(["--include-partial-messages"])
+            .args(["--include-hook-events"])
             .args(["--model", &config.session.model])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -85,24 +75,21 @@ impl Session {
         let (event_tx, event_rx) = mpsc::channel::<BridgeEvent>(256);
         let (stdin_tx, mut stdin_rx) = mpsc::channel::<String>(32);
 
-        // Reader task: stdout → parse → metrics update → event channel
+        // Reader task: stdout → BridgeParser → metrics update → event channel
         let reader_metrics = Arc::clone(&metrics);
         let statusline_config = config.clone();
         tokio::spawn(async move {
             let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
+            let mut parser = BridgeParser::new();
             while let Ok(Some(line)) = lines.next_line().await {
                 if line.is_empty() {
                     continue;
                 }
-                if let Some(event) = protocol_ext::parse_bridge_event(&line) {
-                    // Update shared metrics from event data
+                if let Some(event) = parser.parse(&line) {
                     update_metrics(&reader_metrics, &event);
-
-                    // Push tmux statusline (bridge-level, any consumer gets this)
                     push_statusline_from_metrics(&reader_metrics, &statusline_config);
 
-                    // Send to consumer — if channel is full or closed, drop the event
                     if event_tx.send(event).await.is_err() {
                         break;
                     }
@@ -132,25 +119,16 @@ impl Session {
     }
 
     /// Get the event receiver for consuming bridge events.
-    ///
-    /// The receiver yields `BridgeEvent`s as they arrive from the subprocess.
-    /// When the subprocess exits, the channel closes.
     pub fn event_rx(&mut self) -> &mut mpsc::Receiver<BridgeEvent> {
         &mut self.event_rx
     }
 
     /// Get a shared reference to session metrics.
-    ///
-    /// Any consumer can clone this Arc and read metrics independently of
-    /// the event channel. The TUI reads it for the status bar. A future
-    /// marvel sidecar could serialize it to a JSON file.
     pub fn metrics(&self) -> Arc<Mutex<SessionMetrics>> {
         Arc::clone(&self.metrics)
     }
 
     /// Send a user message to the Claude Code subprocess.
-    ///
-    /// Writes the NDJSON user message format to stdin.
     pub async fn send_user_message(&self, text: &str) -> Result<()> {
         let msg = serde_json::json!({
             "type": "user",
@@ -177,8 +155,6 @@ impl Session {
 
     /// Gracefully shut down the subprocess.
     pub async fn shutdown(&mut self) {
-        // Drop the stdin sender to signal EOF
-        // (already dropped when Session is dropped, but explicit is clearer)
         let _ = self.child.kill().await;
         let _ = self.child.wait().await;
     }
@@ -191,24 +167,32 @@ fn update_metrics(metrics: &Arc<Mutex<SessionMetrics>>, event: &BridgeEvent) {
         Err(_) => return,
     };
     match event {
+        BridgeEvent::SessionInit {
+            session_id,
+            permission_mode,
+            available_slash_commands,
+            context_window_size,
+            model,
+            ..
+        } => {
+            m.session_id = Some(session_id.clone());
+            m.permission_mode = permission_mode.clone();
+            m.available_slash_commands = available_slash_commands.clone();
+            m.context_window_size = *context_window_size;
+            if !model.is_empty() {
+                m.model = model.clone();
+            }
+        }
         BridgeEvent::Core(ClaudeEvent::System { session_id }) => {
             m.session_id = Some(session_id.clone());
         }
         BridgeEvent::Core(ClaudeEvent::Assistant { message }) => {
-            // Track tool uses
-            for block in &message.content {
-                if block.block_type == "tool_use" {
-                    m.tool_use_count += 1;
-                    m.active_tool = block.name.clone();
-                }
-            }
-            // Update token counts
             if let Some(usage) = &message.usage {
                 m.input_tokens += usage.input_tokens;
                 m.output_tokens += usage.output_tokens;
                 m.cache_read_tokens += usage.cache_read_input_tokens;
                 m.cache_creation_tokens += usage.cache_creation_input_tokens;
-                m.update_context_pct(200_000);
+                m.update_context_pct();
             }
         }
         BridgeEvent::Core(ClaudeEvent::Result { payload }) => {
@@ -216,22 +200,24 @@ fn update_metrics(metrics: &Arc<Mutex<SessionMetrics>>, event: &BridgeEvent) {
             m.num_turns = payload.num_turns;
             m.active_tool = None;
         }
+        BridgeEvent::ToolCallStart { name, .. } => {
+            m.tool_use_count += 1;
+            m.active_tool = Some(name.clone());
+        }
+        BridgeEvent::ToolCallStop | BridgeEvent::ToolResult { .. } => {
+            m.active_tool = None;
+        }
+        BridgeEvent::ThinkingDelta { text } => {
+            m.thinking_chars += text.len() as u64;
+        }
         BridgeEvent::RateLimit { status, .. } => {
             m.rate_limit_status = Some(status.clone());
-        }
-        BridgeEvent::ToolResult { .. } => {
-            // Tool completed — clear active tool
-            m.active_tool = None;
         }
         _ => {}
     }
 }
 
 /// Push tmux statusline from current metrics.
-///
-/// Continues the pattern from `session.rs` — statusline updates happen at
-/// bridge level so any consumer (TUI, headless, diagnostic) gets tmux
-/// status for free.
 fn push_statusline_from_metrics(metrics: &Arc<Mutex<SessionMetrics>>, config: &AclaudeConfig) {
     if !config.statusline.enabled {
         return;
@@ -241,7 +227,6 @@ fn push_statusline_from_metrics(metrics: &Arc<Mutex<SessionMetrics>>, config: &A
         Err(_) => return,
     };
 
-    // Only update when we have token data
     if m.input_tokens == 0 {
         return;
     }
