@@ -2,7 +2,7 @@
 
 ## Context
 
-aclaude currently spawns Claude Code with inherited stdio (user gets vanilla
+forestage currently spawns Claude Code with inherited stdio (user gets vanilla
 Claude Code TUI) or in NDJSON streaming mode (programmatic, no TUI). This
 probe builds a prototype ratatui TUI that wraps Claude Code as a headless
 subprocess, rendering its own UI around the NDJSON event stream. The TUI
@@ -23,8 +23,8 @@ consumers of the same Claude Code subprocess:
 **Human operator TUI** (this probe builds this): Rich, persona-themed
 ratatui interface. Conversation viewport, portrait overlay, input area,
 styled status bar. The user interacts directly with Claude Code through
-aclaude's rendering layer. This is the primary experience for a human
-choosing to use aclaude instead of vanilla Claude Code.
+forestage's rendering layer. This is the primary experience for a human
+choosing to use forestage instead of vanilla Claude Code.
 
 **Marvel diagnostic view** (this probe enables, does not build): When
 marvel manages agent sessions autonomously, a human may attach to a
@@ -46,7 +46,7 @@ The existing `session.rs` already writes tmux statusline data via
 tmux-cmc during streaming sessions. The bridge must continue this
 pattern — `SessionMetrics` updates flow to tmux statusline regardless
 of which view (TUI, diagnostic, or headless) is consuming the event
-stream. The statusline is a tmux concern, not a TUI concern. aclaude
+stream. The statusline is a tmux concern, not a TUI concern. forestage
 sessions always have a tmux pane; the statusline is always available.
 
 ## Design Principles (coloring choices, not adding scope)
@@ -360,7 +360,7 @@ Add `pub mod tui;`.
 
 ```sh
 # Build
-cd aclaude && cargo build
+cd forestage && cargo build
 
 # Run tests
 cargo test

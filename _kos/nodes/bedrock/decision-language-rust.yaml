@@ -1,7 +1,7 @@
 id: decision-language-rust
 type: element
 confidence: bedrock
-title: "aclaude is written in Rust"
+title: "forestage is written in Rust"
 content: |
   Rust chosen over TypeScript (inherited from pennyfarthing) following the
   axios npm supply chain incident of 2026-03-31. Decision driven by:
@@ -19,7 +19,7 @@ content: |
   4. Ecosystem alignment: marvel and switchboard are Go, kos is Rust.
      The platform's compiled-language ecosystem is coherent.
 
-  5. No SDK dependency: aclaude spawns `claude` CLI as a subprocess
+  5. No SDK dependency: forestage spawns `claude` CLI as a subprocess
      using the NDJSON streaming protocol. The subprocess protocol is
      the stable contract — no @anthropic-ai/claude-agent-sdk needed.
 

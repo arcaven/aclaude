@@ -2,7 +2,7 @@
 
 ## Context
 
-aclaude currently spawns Claude Code with inherited stdio (user gets vanilla
+forestage currently spawns Claude Code with inherited stdio (user gets vanilla
 Claude Code TUI) or in NDJSON streaming mode (programmatic, no TUI). This
 probe builds a prototype ratatui TUI that wraps Claude Code as a headless
 subprocess, rendering its own UI around the NDJSON event stream. The TUI
@@ -218,7 +218,7 @@ Add `pub mod tui;`.
 
 ```sh
 # Build
-cd aclaude && cargo build
+cd forestage && cargo build
 
 # Run tests
 cargo test

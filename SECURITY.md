@@ -3,7 +3,7 @@
 ## Reporting a Vulnerability
 
 If you discover a security vulnerability, please report it privately using
-[GitHub's vulnerability reporting](https://github.com/ArcavenAE/aclaude/security/advisories/new).
+[GitHub's vulnerability reporting](https://github.com/ArcavenAE/forestage/security/advisories/new).
 
 Please include:
 - Description of the vulnerability

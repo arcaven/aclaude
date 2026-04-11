@@ -1,4 +1,4 @@
-# aclaude Charter
+# forestage Charter
 
 BYOA agent CLI — console environment with persona theming. Spawns `claude`
 CLI as a subprocess using the NDJSON streaming protocol. Rust binary, no
@@ -18,7 +18,7 @@ Last updated: 2026-04-11 (harvest: TUI prototype, session maturity, terminal ima
 
 ### B1: Rust Implementation
 
-aclaude is written in Rust (Edition 2024, MSRV 1.85+). Single static binary,
+forestage is written in Rust (Edition 2024, MSRV 1.85+). Single static binary,
 no runtime dependencies. Spawns `claude` CLI as a subprocess using the NDJSON
 streaming protocol — no SDK dependency, the subprocess protocol is the stable
 contract.
@@ -33,8 +33,8 @@ See also: docs/security/axios-supply-chain-2026-03-31.md.
 
 ### B2: TOML Configuration
 
-Config merge order: defaults → global (~/.config/aclaude/) → local (.aclaude/)
-→ env (ACLAUDE_*) → CLI flags. TOML format for all config files.
+Config merge order: defaults → global (~/.config/forestage/) → local (.forestage/)
+→ env (FORESTAGE_*) → CLI flags. TOML format for all config files.
 
 Evidence: implemented, follows orchestrator convention.
 
@@ -48,7 +48,7 @@ Evidence: build.rs reads personas/themes/*.yaml and generates Rust source.
 
 ### B4: Headless Claude Code with Custom TUI (Bridge Architecture)
 
-Claude Code runs as a headless subprocess via NDJSON streaming. aclaude
+Claude Code runs as a headless subprocess via NDJSON streaming. forestage
 renders a custom ratatui TUI around the event stream. The bridge pattern
 (bridge.rs, protocol_ext.rs at src/ level) is TUI-agnostic — the TUI is
 one consumer module under src/tui/, enabling dual-mode (human TUI + future
@@ -77,11 +77,11 @@ marvel diagnostic) without restructuring.
   size cycle)
 - Input field expansion, bracketed paste support
 
-**`--mode aclaude|claude` flag** selects runtime:
-- `aclaude` (default): headless subprocess + custom ratatui TUI
+**`--mode forestage|claude` flag** selects runtime:
+- `forestage` (default): headless subprocess + custom ratatui TUI
 - `claude`: inherited stdio passthrough to native Claude Code TUI
 
-Configurable via CLI flag, config file, or ACLAUDE_SESSION__MODE env var.
+Configurable via CLI flag, config file, or FORESTAGE_SESSION__MODE env var.
 
 Evidence: 8 phases, 21 commits, ~7000 lines, 94 tests. PR #24 merged to
 develop. finding-010-tui-prototype (partial — architecture validated,
@@ -118,9 +118,9 @@ Three-tier detection replaces hardcoded Kitty/Ghostty allowlist:
 3. Unknown: attempt with best available tool, graceful failure (cosmetic).
 
 Display tool fallback chain: kitten icat → wezterm imgcat → skip.
-tmux graphics passthrough auto-enabled on aclaude's dedicated socket
+tmux graphics passthrough auto-enabled on forestage's dedicated socket
 (allow-passthrough on). Config override: `[portrait] display =
-auto|always|never` with ACLAUDE_PORTRAIT__DISPLAY env var.
+auto|always|never` with FORESTAGE_PORTRAIT__DISPLAY env var.
 
 Evidence: finding-009-terminal-image-support (session-011). Distribution-
 verified — alpha release, Homebrew tap, installed binary tested (WezTerm,
@@ -134,9 +134,9 @@ macOS). No tmux-cmc changes required (existing set_option API sufficient).
 
 ### F1: Two-Audience Problem [partially resolved]
 
-aclaude serves human operators (TUI, status bars, persona flair) and
+forestage serves human operators (TUI, status bars, persona flair) and
 autonomous agents under marvel (fast startup, minimal overhead, programmatic
-control). The `--mode aclaude|claude` flag provides runtime selection, and
+control). The `--mode forestage|claude` flag provides runtime selection, and
 the bridge architecture (B4) validates the split: same subprocess protocol,
 different consumers.
 
@@ -155,14 +155,14 @@ Themes are compiled into the binary (build.rs). Arguments for runtime loading
 (zero-dependency, offline, version coherence). Rust's compile-time embedding
 is more reliable than bun compile's virtual FS — makes bundling more
 attractive than it was in TypeScript. Possible hybrid: bundle defaults, load
-additional from ~/.local/share/aclaude/ or via marvel pack resolution.
+additional from ~/.local/share/forestage/ or via marvel pack resolution.
 
 Cross-ref: orchestrator F12 (persona pack), F15 (persona model).
 
 ### F3: Session Bootstrap Layering
 
 Docker-like model: entrypoint (baked) → installed base (packs) → session
-injection (per-launch). aclaude spawns claude with --append-system-prompt
+injection (per-launch). forestage spawns claude with --append-system-prompt
 for persona injection. Open tension: Claude Code config inheritance (full,
 isolated, or switchable). For autonomous agents: different bootstrap (no TUI,
 task assignment, workspace boundaries).
@@ -173,7 +173,7 @@ Cross-ref: orchestrator F18.
 
 Brew and self-update are parallel version managers with no coordination.
 build.rs generate_version() injects version info at compile time. Should
-aclaude detect brew install and defer? Or should one channel win? Dual-track
+forestage detect brew install and defer? Or should one channel win? Dual-track
 model needs re-validation for Rust artifacts.
 
 Cross-ref: orchestrator F11 (distribution model).
@@ -216,7 +216,7 @@ discarded.
 
 ### G2: TypeScript + bun compile + Agent SDK
 
-aclaude's original implementation stack, inherited from pennyfarthing.
+forestage's original implementation stack, inherited from pennyfarthing.
 Worked: bun compile produced signed binaries, themes embedded, Agent SDK
 provided subprocess management. Problems: 15s first-prompt latency, 63MB
 binary, bun compile virtual FS friction (5+ broken features), npm supply

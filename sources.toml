@@ -1,6 +1,6 @@
-# aclaude sources — declares where importable objects come from.
+# forestage sources — declares where importable objects come from.
 #
-# `aclaude sync` reads this file and pulls objects from each source.
+# `forestage sync` reads this file and pulls objects from each source.
 # Images are siphoned to the global portrait cache, not into this repo.
 #
 # Resolution: later sources override earlier ones for same-named objects.
@@ -12,7 +12,7 @@
 [portraits]
 # Portraits are stored globally, not in the repo.
 # The sync command copies images here; the CLI resolves them at runtime.
-cache_dir = "$XDG_DATA_HOME/aclaude/portraits"  # default: ~/.local/share/aclaude/portraits
+cache_dir = "$XDG_DATA_HOME/forestage/portraits"  # default: ~/.local/share/forestage/portraits
 sizes = ["small", "medium"]                       # which sizes to keep (skip large/original to save space)
 
 # ---------------------------------------------------------------------------

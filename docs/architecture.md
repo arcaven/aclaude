@@ -1,8 +1,8 @@
-# aclaude Architecture
+# forestage Architecture
 
 ## Overview
 
-aclaude is a BOYC (Bring Your Own Claude) agent orchestration platform. Phase 1 is a standalone single-agent CLI that wraps the Claude SDK with persona theming, a config system, and tmux integration.
+forestage is a BOYC (Bring Your Own Claude) agent orchestration platform. Phase 1 is a standalone single-agent CLI that wraps the Claude SDK with persona theming, a config system, and tmux integration.
 
 ## Directory Structure
 
@@ -17,9 +17,9 @@ aclaude is a BOYC (Bring Your Own Claude) agent orchestration platform. Phase 1 
 TOML-based, layered merge (last wins):
 
 1. Built-in defaults (`config/defaults.toml`)
-2. Global user config (`$XDG_CONFIG_HOME/aclaude/config.toml`)
-3. Local project config (`.aclaude/config.toml`)
-4. Environment variables (`ACLAUDE_*` prefix, double-underscore nesting)
+2. Global user config (`$XDG_CONFIG_HOME/forestage/config.toml`)
+3. Local project config (`.forestage/config.toml`)
+4. Environment variables (`FORESTAGE_*` prefix, double-underscore nesting)
 5. CLI flags
 
 ## Persona System

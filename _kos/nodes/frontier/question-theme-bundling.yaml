@@ -13,7 +13,7 @@ content: |
 
   Runtime loading: pack system (marvel), smaller binary, multi-console reuse.
   Bundling: zero-dependency, offline, version coherence.
-  Hybrid: bundle minimal default, load additional from ~/.local/share/aclaude/
+  Hybrid: bundle minimal default, load additional from ~/.local/share/forestage/
   or via marvel pack resolution.
 
   New consideration post-rewrite: Rust's include_str!/include_bytes! and

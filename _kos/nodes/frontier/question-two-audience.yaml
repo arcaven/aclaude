@@ -3,7 +3,7 @@ type: question
 confidence: frontier
 title: "Two-audience problem — human operators vs autonomous agents"
 content: |
-  aclaude serves human operators (TUI, status bars, persona flair, markdown
+  forestage serves human operators (TUI, status bars, persona flair, markdown
   rendering) and autonomous agents under marvel (fast startup, minimal
   overhead, programmatic control, no visual decoration). These may not be
   the same binary or the same runtime mode.
@@ -12,7 +12,7 @@ content: |
   question. Rust gives both audiences a fast, portable binary. The question
   is now about runtime behavior, not implementation stack:
 
-  - Should aclaude have a --headless or --agent flag that strips TUI,
+  - Should forestage have a --headless or --agent flag that strips TUI,
     persona flair, and interactive prompts?
   - Should marvel's team manifests specify a runtime mode per role?
   - Is this one binary with feature flags, or genuinely two binaries?
@@ -24,7 +24,7 @@ edges:
   - target: decision-language-rust
     type: derives
     note: "Language resolved — audience question is now about runtime mode"
-  - target: aae-orc::question-aclaude-ux-parity
+  - target: aae-orc::question-forestage-ux-parity
     type: derives
     note: "Local form of orchestrator F13"
   - target: aae-orc::question-assumption-provenance

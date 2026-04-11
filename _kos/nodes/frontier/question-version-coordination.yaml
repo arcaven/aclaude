@@ -12,12 +12,12 @@ content: |
   (updater.rs) and Homebrew tap are both distribution channels that need
   to coexist or have one defer to the other.
 
-  Open: should aclaude detect brew install and defer to brew upgrade?
+  Open: should forestage detect brew install and defer to brew upgrade?
   Or should one channel win? Dual-track (alpha via self-update, stable
   via brew) is the design but needs re-validation for Rust artifacts
   (cargo build instead of bun compile).
 edges:
-  - target: aae-orc::question-aclaude-distribution
+  - target: aae-orc::question-forestage-distribution
     type: derives
     note: "Local form of orchestrator F11"
   - target: decision-language-rust

@@ -4,8 +4,8 @@ title: "Rust rewrite resolves language choice, supply chain, and binary portabil
 probe: null  # reactive decision, not a planned probe
 content: |
   On 2026-03-31, the axios npm supply chain attack (malicious RAT dropper in
-  axios@1.14.1, live ~3 hours) exposed the structural risk of aclaude's npm
-  dependency chain. aclaude was not compromised (axios not in resolved tree,
+  axios@1.14.1, live ~3 hours) exposed the structural risk of forestage's npm
+  dependency chain. forestage was not compromised (axios not in resolved tree,
   no CI runs during window), but the incident crystallized two latent concerns:
 
   1. The npm ecosystem is a supply chain liability for a tool that produces
@@ -21,7 +21,7 @@ content: |
 
   - Language: TypeScript → Rust (Edition 2024, MSRV 1.85+)
   - Build: bun compile → cargo build (static binary)
-  - SDK: @anthropic-ai/claude-agent-sdk removed. aclaude now spawns `claude`
+  - SDK: @anthropic-ai/claude-agent-sdk removed. forestage now spawns `claude`
     CLI as a subprocess using the NDJSON streaming protocol directly. No SDK
     dependency — the subprocess protocol is the stable contract.
   - Theme embedding: embed-themes.ts → build.rs (compile-time code generation)
@@ -58,7 +58,7 @@ content: |
 
   ## Assumption provenance note (F16)
 
-  The distribution probe findings (aae-orc sprint/rd/aclaude-distribution.md,
+  The distribution probe findings (aae-orc sprint/rd/forestage-distribution.md,
   38 findings) were implementation-bound to TypeScript/bun. Most are now
   stale. Portable findings that survive: brew tap pipeline pattern, dual
   alpha/stable channel model, self-update UX pattern, code signing workflow.
@@ -72,9 +72,9 @@ nodes_affected:
   - question-version-coordination  # updated content
   - grv-pennyfarthing         # reinforced
 evidence:
-  - "PR #3: ArcavenAE/aclaude feat/rust-rewrite (merged 2026-04-01)"
+  - "PR #3: ArcavenAE/forestage feat/rust-rewrite (merged 2026-04-01)"
   - "docs/security/axios-supply-chain-2026-03-31.md"
-  - "commit d2e159a: feat(aclaude): rewrite from TypeScript to Rust"
+  - "commit d2e159a: feat(forestage): rewrite from TypeScript to Rust"
 provenance:
   created_by: human
   session: harvest-rust-rewrite

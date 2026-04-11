@@ -1,11 +1,11 @@
-# aclaude configuration
-# Copy to ~/.config/aclaude/config.toml (global) or .aclaude/config.toml (local)
+# forestage configuration
+# Copy to ~/.config/forestage/config.toml (global) or .forestage/config.toml (local)
 #
 # Resolution order (last wins):
 #   1. Built-in defaults (config/defaults.toml)
-#   2. Global: $XDG_CONFIG_HOME/aclaude/config.toml
-#   3. Local: .aclaude/config.toml
-#   4. Environment: ACLAUDE_* prefix
+#   2. Global: $XDG_CONFIG_HOME/forestage/config.toml
+#   3. Local: .forestage/config.toml
+#   4. Environment: FORESTAGE_* prefix
 #   5. CLI flags
 
 [session]

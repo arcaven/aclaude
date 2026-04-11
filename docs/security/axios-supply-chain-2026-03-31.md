@@ -2,7 +2,7 @@
 
 **Date of analysis:** 2026-04-01
 **Analyst:** Michael Pursifull (with Claude Code tooling)
-**Scope:** ArcavenAE/aclaude — exposure assessment against compromised axios npm packages
+**Scope:** ArcavenAE/forestage — exposure assessment against compromised axios npm packages
 **Verdict:** Not compromised. No exposure during the attack window.
 
 ---
@@ -53,9 +53,9 @@ versions were published.
 
 ---
 
-## aclaude CI Activity During the Attack Period
+## forestage CI Activity During the Attack Period
 
-Data sourced from GitHub Actions run history (`gh run list --repo ArcavenAE/aclaude`).
+Data sourced from GitHub Actions run history (`gh run list --repo ArcavenAE/forestage`).
 
 ### Runs proximate to the attack window
 
@@ -108,13 +108,13 @@ vitest@3.2.4
 
 ### Direct dependencies
 
-aclaude's `cli/package.json` does not list axios as a direct dependency.
+forestage's `cli/package.json` does not list axios as a direct dependency.
 The dependency tree consists of the Anthropic SDKs, commander, smol-toml,
 yaml, and dev tooling (eslint, typescript, vitest, tsx).
 
 ### Transitive presence of axios
 
-axios appears in the aclaude dependency tree in one location:
+axios appears in the forestage dependency tree in one location:
 
 - **`rollup/package.json`** contains an `overrides` entry: `"axios": "^1.13.5"`
 
@@ -145,7 +145,7 @@ actual one.
   before the attack. No local `npm install` or `bun install` modified
   the lockfile during the attack window.
 - No `axios/` directory exists in the local `node_modules`.
-- The last aclaude commit before the attack window was `0a0dbf1` at
+- The last forestage commit before the attack window was `0a0dbf1` at
   2026-03-30 21:07 UTC (kos process adoption — documentation only,
   no dependency changes).
 
@@ -153,7 +153,7 @@ actual one.
 
 ## CI Pipeline Risk Profile
 
-The aclaude CI pipeline (`ci.yml`, `release.yml`, `release-verify.yml`)
+The forestage CI pipeline (`ci.yml`, `release.yml`, `release-verify.yml`)
 performs the following on every push to `main`:
 
 1. `bun install` (with lockfile migration)
@@ -203,7 +203,7 @@ that produce signed, distributed binaries.
    surface known-compromised transitive dependencies before they reach
    the build-and-release pipeline.
 
-4. **Monitor for IOCs.** Although aclaude was not exposed, any developer
+4. **Monitor for IOCs.** Although forestage was not exposed, any developer
    machine that ran `npm install` or `bun install` in any project
    containing axios during 2026-03-31 00:21–03:25 UTC should be checked
    against the published indicators of compromise (C2 domains, RAT
@@ -213,13 +213,13 @@ that produce signed, distributed binaries.
 
 ## Conclusion
 
-aclaude was not compromised by the axios supply chain attack of 2026-03-31.
+forestage was not compromised by the axios supply chain attack of 2026-03-31.
 The project does not resolve axios as an installed dependency, the lockfile
 was not modified during the attack window, and no CI runs occurred during
 the 3-hour period when malicious versions were available on npm. Multiple
 independent protective factors prevented exposure.
 
-The incident is a useful case study for the aclaude project's own supply
+The incident is a useful case study for the forestage project's own supply
 chain posture: the CI pipeline produces signed binaries distributed via
 Homebrew, which means a compromised build-time dependency would have
 downstream amplification well beyond the CI runner itself.

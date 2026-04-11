@@ -1,6 +1,6 @@
-# aclaude Design Questions
+# forestage Design Questions
 
-Open questions about what aclaude should be. These are not issues or TODOs —
+Open questions about what forestage should be. These are not issues or TODOs —
 they're uncertainties that probing is expected to resolve. Cross-referenced
 with aae-orc charter frontier items.
 
@@ -8,7 +8,7 @@ Last updated: 2026-04-01 (harvest: Rust rewrite)
 
 ---
 
-## What is aclaude for?
+## What is forestage for?
 
 Two use cases, possibly two products:
 
@@ -24,13 +24,13 @@ control, predictable behavior. May not need themes at all — or needs exactly
 one, injected at launch.
 
 The Rust rewrite gives both audiences a fast, portable binary. The question
-is now about runtime behavior: should aclaude have a --headless or --agent
+is now about runtime behavior: should forestage have a --headless or --agent
 flag? Is this one binary with modes, or two binaries? The subprocess protocol
 (NDJSON) is the same for both audiences.
 
 Charter: F13 (UX parity), F14 (TUI), F16 (assumption provenance).
 
-## ~~Should aclaude be TypeScript?~~ RESOLVED
+## ~~Should forestage be TypeScript?~~ RESOLVED
 
 **Answered: No. Rust.** Rewritten 2026-04-01 following the axios npm supply
 chain incident. See finding-001-rust-rewrite, docs/security/axios-supply-chain-2026-03-31.md.
@@ -63,24 +63,24 @@ Arguments for bundling:
 - Version coherence: binary + themes are always in sync.
 
 Possible hybrid: bundle a minimal default set, load additional themes
-from `~/.local/share/aclaude/themes/` or via marvel pack resolution.
+from `~/.local/share/forestage/themes/` or via marvel pack resolution.
 
 Charter: F12 (persona themes as content pack), F15 (persona model).
 
-## How should aclaude sessions be bootstrapped?
+## How should forestage sessions be bootstrapped?
 
 Docker-like layering model:
 
-1. **Entrypoint** (baked in) — "you are aclaude." System prompt injected
+1. **Entrypoint** (baked in) — "you are forestage." System prompt injected
    via `--append-system-prompt`. Always present.
 2. **Installed base** (on disk) — packs, themes, commands. Updateable
    independently of the binary.
 3. **Session injection** (per-launch) — persona, model, permissions,
    feature flags. Ephemeral.
 
-Open tension: aclaude inherits Claude Code's config (`~/.claude/`,
+Open tension: forestage inherits Claude Code's config (`~/.claude/`,
 `.claude/rules/`, CLAUDE.md). Users may want full inheritance, isolation,
-or switching between vanilla Claude Code and aclaude. This needs to be a
+or switching between vanilla Claude Code and forestage. This needs to be a
 preference, not hardcoded.
 
 For autonomous agents (marvel teams): bootstrap is different. No TUI
@@ -96,7 +96,7 @@ at compile time via cargo rustc-env directives. Self-update (updater.rs)
 validated in TypeScript era, needs re-validation for Rust artifacts.
 
 Open: brew and self-update are parallel version managers. No coordination.
-Should aclaude detect brew install and defer to `brew upgrade`? Or should
+Should forestage detect brew install and defer to `brew upgrade`? Or should
 one channel win? Dual-track (alpha via self-update, stable via brew) is
 the design but untested for Rust distribution.
 

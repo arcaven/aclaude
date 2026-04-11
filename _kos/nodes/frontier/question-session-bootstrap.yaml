@@ -1,13 +1,13 @@
 id: question-session-bootstrap
 type: question
 confidence: frontier
-title: "How should aclaude sessions be bootstrapped?"
+title: "How should forestage sessions be bootstrapped?"
 content: |
-  Docker-like layering model: entrypoint (baked — "you are aclaude"),
+  Docker-like layering model: entrypoint (baked — "you are forestage"),
   installed base (packs, themes, commands — updateable), session injection
   (persona, model, permissions — ephemeral).
 
-  Post-rewrite: aclaude spawns `claude` CLI as a subprocess with
+  Post-rewrite: forestage spawns `claude` CLI as a subprocess with
   --append-system-prompt for persona injection. No Agent SDK —
   the NDJSON subprocess protocol is the integration point. Session
   modes: interactive (TUI passthrough), one-shot (-p prompt), and
@@ -15,7 +15,7 @@ content: |
 
   Open tension: Claude Code config inheritance. Users may want
   full inheritance (additive), isolation, or switching between
-  vanilla Claude Code and aclaude. This should be configurable
+  vanilla Claude Code and forestage. This should be configurable
   per-session, possibly per-workspace in marvel.
 
   For autonomous agents (marvel teams): different bootstrap. No TUI

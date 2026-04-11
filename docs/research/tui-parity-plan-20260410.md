@@ -1,17 +1,17 @@
-# Plan: aclaude TUI Feature Parity with Claude Code
+# Plan: forestage TUI Feature Parity with Claude Code
 
 ## Context
 
-The aclaude TUI prototype runs Claude Code as a headless subprocess via NDJSON
+The forestage TUI prototype runs Claude Code as a headless subprocess via NDJSON
 streaming and renders a custom ratatui interface. It handles basic text streaming,
 tool name tracking, input history, tab completion, portrait overlay, and a status
 bar. This plan closes the feature gap with vanilla Claude Code while retaining
-aclaude's portrait feature and dual-mode bridge architecture.
+forestage's portrait feature and dual-mode bridge architecture.
 
 ## Reference Architecture Analysis
 
 Patterns drawn from adversarial review of four Rust reimplementations
-(`aclaude/docs/research/rust-claude-reimplementations-20260410.md`) and
+(`forestage/docs/research/rust-claude-reimplementations-20260410.md`) and
 deep source audit of `/tmp/rust-claude-review/`:
 
 **srg-claude-code-rust** (Apache-2.0, B+) — code-borrowable:
@@ -43,7 +43,7 @@ deep source audit of `/tmp/rust-claude-review/`:
 - Virtual list: only renders visible items for long conversations.
 - Notification banners with auto-fade for transient status messages.
 
-**Licensing discipline**: aclaude is MIT. Never copy GPL code (claurst).
+**Licensing discipline**: forestage is MIT. Never copy GPL code (claurst).
 Study pi_agent_rust but don't copy (rider complexity). srg-claude-code-rust
 (Apache-2.0) and claw-code-rust (MIT) are safe to reference with attribution.
 
@@ -321,7 +321,7 @@ system/init. @ file path completion. Unknown commands forwarded to Claude Code.
 
 ### Slash command dispatch
 
-Local commands handled by aclaude:
+Local commands handled by forestage:
 - `/exit` — quit (already done)
 - `/login` — auth info (already done)
 - `/clear` — clear conversation display
@@ -576,7 +576,7 @@ overlay renders last in the draw call, on top of conversation content.
 After each phase:
 
 ```sh
-cd aclaude && cargo build && cargo test && cargo clippy -- -D warnings && cargo +nightly fmt --all -- --check
+cd forestage && cargo build && cargo test && cargo clippy -- -D warnings && cargo +nightly fmt --all -- --check
 ```
 
 Manual testing per phase:

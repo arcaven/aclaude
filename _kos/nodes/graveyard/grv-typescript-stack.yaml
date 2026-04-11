@@ -3,13 +3,13 @@ type: graveyard
 confidence: graveyard
 title: "TypeScript + bun compile + Agent SDK stack"
 content: |
-  aclaude's original implementation stack, inherited from pennyfarthing.
+  forestage's original implementation stack, inherited from pennyfarthing.
   TypeScript compiled via bun compile, using @anthropic-ai/claude-agent-sdk
   and @anthropic-ai/sdk for Claude Code integration.
 
   Worked: bun compile produced signed binaries, themes embedded, Agent SDK
   provided subprocess management, distribution pipeline validated (38 findings
-  in aae-orc sprint/rd/aclaude-distribution.md).
+  in aae-orc sprint/rd/forestage-distribution.md).
 
   Problems that accumulated:
   - 15-second first-prompt latency (bun VM startup)

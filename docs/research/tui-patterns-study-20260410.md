@@ -2,7 +2,7 @@
 
 Date: 2026-04-10
 Context: Studied four Rust projects for patterns applicable to building
-aclaude's TUI around Claude Code's NDJSON streaming protocol. Ideas and
+forestage's TUI around Claude Code's NDJSON streaming protocol. Ideas and
 architectural patterns only — no code copied from GPL or rider-licensed
 projects.
 
@@ -29,7 +29,7 @@ Input area is enabled only in Ready state. Spinner animates only in
 CommandPending. Status bar updates reflect current state. Each NDJSON
 event triggers a state transition.
 
-**Why this matters for aclaude:** the subprocess produces events
+**Why this matters for forestage:** the subprocess produces events
 asynchronously. Without a state machine, the TUI would need ad-hoc
 checks everywhere for "are we mid-response?" "is a tool running?"
 "did the subprocess crash?" The enum centralizes this.
@@ -56,7 +56,7 @@ ui/
 Layout is computed once per frame, areas passed to sub-components.
 No component knows about other components' state.
 
-**For aclaude:** add persona-specific components — portrait panel,
+**For forestage:** add persona-specific components — portrait panel,
 persona name/role in status bar, theme-colored borders.
 
 ## Pattern 3: Streaming Text Batching
@@ -73,7 +73,7 @@ The batcher runs on a separate timer. When either threshold is hit,
 it drains the buffer and sends a single "flush" message to the TUI
 update loop.
 
-**For aclaude:** Claude Code's `--include-partial-messages` can produce
+**For forestage:** Claude Code's `--include-partial-messages` can produce
 many small chunks. Batching is load-bearing for smooth rendering.
 
 ## Pattern 4: Incremental Markdown Parsing with Cache Invalidation
@@ -93,7 +93,7 @@ Long messages are segmented at paragraph boundaries (double newline)
 with a soft limit (~1.5KB) and hard limit (~4KB). Code fences are
 tracked to avoid splitting inside code blocks.
 
-**For aclaude:** Claude Code responses can be very long (full file
+**For forestage:** Claude Code responses can be very long (full file
 contents, large diffs). Without cache segmentation, rendering a
 single 50KB message would freeze the TUI.
 
@@ -120,7 +120,7 @@ Each handler is a pure function: takes app state + event, returns
 mutated state. No handler triggers re-rendering directly — that's
 the frame loop's job.
 
-**For aclaude:** this is the core integration point. protocol.rs
+**For forestage:** this is the core integration point. protocol.rs
 already parses NDJSON events. Expand the ClaudeEvent enum to cover
 all event types, then write per-event handlers that mutate TUI state.
 
@@ -140,7 +140,7 @@ The TUI maps results to state changes: "message" displays text,
 "config change" updates settings, "conversation reset" clears
 viewport.
 
-**For aclaude:** slash commands control the subprocess:
+**For forestage:** slash commands control the subprocess:
 - `/pause` — send SIGSTOP to subprocess
 - `/resume` — send SIGCONT
 - `/restart` — kill and respawn subprocess
@@ -180,7 +180,7 @@ exists, else record).
 
 Sensitive data (API keys, session IDs) redacted before saving.
 
-**For aclaude:** this enables testing the TUI without spawning Claude
+**For forestage:** this enables testing the TUI without spawning Claude
 Code. Record a real session once, replay forever. Catches regressions
 in event parsing and rendering.
 
@@ -208,7 +208,7 @@ provides textarea, viewport, spinner widgets on top of this pattern.
 - ratatui: larger ecosystem, more examples, more contributors, familiar
   to Rust developers who've used tui-rs
 
-**For aclaude:** ratatui is the safer choice (ecosystem, contributors,
+**For forestage:** ratatui is the safer choice (ecosystem, contributors,
 examples). But the Elm Architecture's state management ideas can inform
 how we structure ratatui state — even in immediate mode, we can use a
 message-passing pattern internally.
@@ -230,7 +230,7 @@ paths (streaming NDJSON parsing, markdown rendering).
 Separate `[profile.perf]` with `lto = "thin"` and `debug = 1` for
 benchmarking with symbols.
 
-**For aclaude:** adopt the release profile. Consider jemalloc for
+**For forestage:** adopt the release profile. Consider jemalloc for
 streaming-heavy workloads. The perf profile is valuable for
 identifying TUI rendering bottlenecks.
 
@@ -253,14 +253,14 @@ Denying `unwrap_used` and `panic` forces proper error handling
 throughout. This is especially important for a TUI app where a panic
 kills the terminal state (raw mode, cursor hidden, etc.).
 
-**For aclaude:** adopt this configuration. A panic in the TUI leaves
+**For forestage:** adopt this configuration. A panic in the TUI leaves
 the terminal in raw mode with no cursor — worse than a crash in a
 non-TUI app.
 
-## Synthesis: Recommended Architecture for aclaude TUI
+## Synthesis: Recommended Architecture for forestage TUI
 
 ```
-aclaude-tui crate (new)
+forestage-tui crate (new)
 ├── app.rs           — App struct + AppStatus enum (state machine)
 ├── events/
 │   ├── mod.rs       — event dispatch by ClaudeEvent type

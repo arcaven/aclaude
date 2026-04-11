@@ -1,6 +1,6 @@
 # Portrait Distribution — Implementation Design
 
-Concrete changes needed in Cloudflare and aclaude to ship portrait
+Concrete changes needed in Cloudflare and forestage to ship portrait
 distribution for the 45 themes that already have portraits.
 
 ---
@@ -10,14 +10,14 @@ distribution for the 45 themes that already have portraits.
 ### Bucket
 
 ```
-Bucket name:  aclaude-portraits
+Bucket name:  forestage-portraits
 Region:       auto (Cloudflare chooses closest)
 ```
 
 ### Custom domain
 
 ```
-Domain:    portraits.aclaude.dev
+Domain:    portraits.forestage.dev
 Type:      CNAME → <bucket>.r2.dev  (or Cloudflare custom domain binding)
 HTTPS:     automatic via Cloudflare
 ```
@@ -67,7 +67,7 @@ Set on upload via rclone flags:
 {
   "schema": 1,
   "updated": "2026-04-11T00:00:00Z",
-  "base_url": "https://portraits.aclaude.dev/v1",
+  "base_url": "https://portraits.forestage.dev/v1",
   "themes": {
     "dune": {
       "pack_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -150,7 +150,7 @@ set -euo pipefail
 
 DIST_DIR="${1:?Usage: gen-manifest.sh <dist-dir> <themes-yaml-dir>}"
 THEMES_DIR="${2:?Usage: gen-manifest.sh <dist-dir> <themes-yaml-dir>}"
-BASE_URL="${3:-https://portraits.aclaude.dev/v1}"
+BASE_URL="${3:-https://portraits.forestage.dev/v1}"
 
 # Start JSON
 cat <<HEADER
@@ -232,17 +232,17 @@ set -euo pipefail
 DIST_DIR="${1:?Usage: upload-r2.sh <dist-dir>}"
 
 echo "Uploading theme packs..."
-rclone sync "$DIST_DIR/" r2:aclaude-portraits/v1/themes/ \
+rclone sync "$DIST_DIR/" r2:forestage-portraits/v1/themes/ \
     --include "*.tar.gz" --include "*.sha256" \
     --header-upload "Cache-Control: public, max-age=604800, immutable" \
     --progress
 
 echo "Uploading manifest..."
-rclone copyto "$DIST_DIR/manifest.json" r2:aclaude-portraits/v1/manifest.json \
+rclone copyto "$DIST_DIR/manifest.json" r2:forestage-portraits/v1/manifest.json \
     --header-upload "Cache-Control: public, max-age=3600" \
     --progress
 
-echo "Done. Verify: curl -I https://portraits.aclaude.dev/v1/manifest.json"
+echo "Done. Verify: curl -I https://portraits.forestage.dev/v1/manifest.json"
 ```
 
 ---
@@ -275,7 +275,7 @@ impl Default for PortraitConfig {
 ```
 
 TOML: `[portrait] auto_download = false`
-Env: `ACLAUDE_PORTRAIT__AUTO_DOWNLOAD=false`
+Env: `FORESTAGE_PORTRAIT__AUTO_DOWNLOAD=false`
 
 ### 4b. New module: `src/download.rs`
 
@@ -293,10 +293,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::error::{AclaudeError, Result};
+use crate::error::{ForestageError, Result};
 use crate::portrait::portrait_cache_dir;
 
-const MANIFEST_URL: &str = "https://portraits.aclaude.dev/v1/manifest.json";
+const MANIFEST_URL: &str = "https://portraits.forestage.dev/v1/manifest.json";
 const MANIFEST_CHECK_INTERVAL_SECS: u64 = 86400; // 24h
 
 /// Remote manifest schema.
@@ -341,7 +341,7 @@ pub fn ensure_portraits(theme: &str) -> Result<bool> {
 
     // Check curl is available
     if !command_exists("curl") {
-        return Err(AclaudeError::Session {
+        return Err(ForestageError::Session {
             message: "curl not found — needed for portrait download. Install curl or set [portrait] auto_download = false".to_string(),
         });
     }
@@ -385,7 +385,7 @@ pub fn ensure_portraits(theme: &str) -> Result<bool> {
     }
 
     // Extract
-    fs::create_dir_all(&theme_dir).map_err(|e| AclaudeError::Session {
+    fs::create_dir_all(&theme_dir).map_err(|e| ForestageError::Session {
         message: format!("failed to create portrait dir: {e}"),
     })?;
 
@@ -441,7 +441,7 @@ fn fetch_manifest(cache: &Path) -> Result<Option<RemoteManifest>> {
 
     // Fetch with etag
     let tmp = cache.join(".manifest.tmp");
-    fs::create_dir_all(cache).map_err(|e| AclaudeError::Session {
+    fs::create_dir_all(cache).map_err(|e| ForestageError::Session {
         message: format!("failed to create cache dir: {e}"),
     })?;
 
@@ -522,7 +522,7 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
         .args(["dgst", "-sha256", "-r"])
         .arg(path)
         .output()
-        .map_err(|e| AclaudeError::Session {
+        .map_err(|e| ForestageError::Session {
             message: format!("openssl not found for SHA256 verification: {e}"),
         })?;
 
@@ -554,11 +554,11 @@ fn merge_local_manifest(
 
     manifest.insert(theme.to_string(), persona_map.clone());
 
-    let json = serde_json::to_string_pretty(&manifest).map_err(|e| AclaudeError::Session {
+    let json = serde_json::to_string_pretty(&manifest).map_err(|e| ForestageError::Session {
         message: format!("failed to serialize manifest: {e}"),
     })?;
 
-    fs::write(&manifest_path, json).map_err(|e| AclaudeError::Session {
+    fs::write(&manifest_path, json).map_err(|e| ForestageError::Session {
         message: format!("failed to write manifest: {e}"),
     })
 }
@@ -611,11 +611,11 @@ enum PortraitAction {
 _ => {
     // Auto-download portraits before TUI launch
     if cfg.portrait.auto_download {
-        if let Err(e) = aclaude::download::ensure_portraits(&cfg.persona.theme) {
+        if let Err(e) = forestage::download::ensure_portraits(&cfg.persona.theme) {
             eprintln!("portrait download: {e}");
         }
     }
-    // aclaude TUI (custom ratatui over NDJSON)
+    // forestage TUI (custom ratatui over NDJSON)
     let rt = tokio::runtime::Builder::new_current_thread()
         // ...
 ```
@@ -624,7 +624,7 @@ Also call it before `persona show --portrait`:
 ```rust
 // In PersonaAction::Show, before resolve_portrait:
 if show_portrait && cfg.portrait.auto_download {
-    let _ = aclaude::download::ensure_portraits(&name);
+    let _ = forestage::download::ensure_portraits(&name);
 }
 ```
 
@@ -680,7 +680,7 @@ subprocess — all present on macOS and standard Linux.
 | Unit: `merge_local_manifest` | Writes correct JSON, merges with existing |
 | Unit: `CacheMeta` serde | Round-trips through JSON |
 | Integration: `ensure_portraits` | Mock HTTP with local file server, verify full flow |
-| Manual: fresh install | `aclaude` with no cache → downloads theme → portrait renders |
+| Manual: fresh install | `forestage` with no cache → downloads theme → portrait renders |
 | Manual: cached | Second launch → no network, instant |
 | Manual: offline | No network → warns, continues without portrait |
 | Manual: `portraits download --all` | All 45 themes downloaded |

@@ -1,13 +1,13 @@
 # Agent SDK Pass-Through Analysis
 
 date: 2026-03-18
-question: can aclaude be additive to Claude Code, or does wrapping via the Agent SDK lose features?
+question: can forestage be additive to Claude Code, or does wrapping via the Agent SDK lose features?
 relates-to: F13 (UX Parity and Enhancement vs Vanilla Claude Code)
 
 ## Summary
 
 The Agent SDK is a coordination layer over the Claude Code subprocess, not
-a reimplementation. aclaude inherits nearly all Claude Code capabilities
+a reimplementation. forestage inherits nearly all Claude Code capabilities
 by default — but only if configured correctly. The critical finding: the
 SDK defaults to **isolated mode** (no settings loaded) unless you explicitly
 opt in via `settingSources`.
@@ -25,7 +25,7 @@ opt in via `settingSources`.
 - Context compaction
 - File checkpointing (opt-in via `enableFileCheckpointing`)
 
-## What aclaude adds (the value layer)
+## What forestage adds (the value layer)
 
 - Persona theming (100 theme rosters, immersion levels)
 - TOML config with 5-layer merge chain
@@ -39,15 +39,15 @@ opt in via `settingSources`.
 | Feature | Impact | Mitigation |
 |---------|--------|------------|
 | Slash command invocation | Commands enumerable but not invocable via SDK message flow | Parse and route manually, or accept limitation |
-| Shell-based hooks (.claude/settings) | User-configured shell hooks don't fire | aclaude's JS hooks replace these; document the difference |
-| Interactive CLI commands (/clear, /continue) | CLI-specific UX not exposed | Implement equivalents (aclaude already has /quit, /usage) |
+| Shell-based hooks (.claude/settings) | User-configured shell hooks don't fire | forestage's JS hooks replace these; document the difference |
+| Interactive CLI commands (/clear, /continue) | CLI-specific UX not exposed | Implement equivalents (forestage already has /quit, /usage) |
 | Interactive permission dialogs | Allow/Deny/Always Allow UI not exposed | `permissionMode: 'default'` delegates to subprocess; `canUseTool()` callback available for custom logic |
 | Real-time context window display | Context size only in final SDKResultMessage | Track per-turn via SDKAssistantMessage.message.usage (already implemented) |
 | Error recovery UX | CLI shows user-friendly dialogs; SDK returns error subtypes | Must present authentication_failed, billing_error, rate_limit, etc. |
 
 ## SDK query() options surface (50+ fields)
 
-Key options aclaude should expose or consider:
+Key options forestage should expose or consider:
 
 | Option | Current state | Action |
 |--------|--------------|--------|
@@ -59,7 +59,7 @@ Key options aclaude should expose or consider:
 | `sandbox` | Not configured | Could expose for security-conscious users |
 | `additionalDirectories` | Not set | Could expose in config |
 | `agents` | Not set | Could define custom subagents programmatically |
-| `mcpServers` | Not set (inherited from Claude Code) | Could add aclaude-specific MCP servers |
+| `mcpServers` | Not set (inherited from Claude Code) | Could add forestage-specific MCP servers |
 | `maxThinkingTokens` | Not set | Could expose in config |
 | `betas` | Not set | Could enable 1M context (`context-1m-2025-08-07`) |
 
@@ -77,23 +77,23 @@ Key options aclaude should expose or consider:
 10. PreCompact — before context compaction
 11. PermissionRequest — permission prompt (can allow/deny/ask)
 
-aclaude currently uses PreToolUse, PostToolUse, PostToolUseFailure,
+forestage currently uses PreToolUse, PostToolUse, PostToolUseFailure,
 SessionStart, and SessionEnd. The others are available for future use.
 
 ## Key finding: additive by default
 
-With `settingSources` set correctly, aclaude is **additive by default**.
+With `settingSources` set correctly, forestage is **additive by default**.
 Claude Code's full configuration loads (CLAUDE.md, settings, MCP servers),
-and aclaude's persona/config/hooks layer on top. Users get everything
-vanilla Claude Code provides, plus aclaude's enhancements.
+and forestage's persona/config/hooks layer on top. Users get everything
+vanilla Claude Code provides, plus forestage's enhancements.
 
 The SDK is designed for this pattern — it's a wrapper API, not a fork.
-The subprocess is real Claude Code running with real tools. aclaude's
+The subprocess is real Claude Code running with real tools. forestage's
 value is in the configuration, theming, and operational layer around it.
 
 ## systemPrompt architecture — RESOLVED
 
-**Problem:** aclaude was replacing Claude Code's entire system prompt
+**Problem:** forestage was replacing Claude Code's entire system prompt
 with the persona prompt. This lost all built-in tool instructions,
 safety guidelines, and capabilities. Users got a worse Claude Code.
 
@@ -111,7 +111,7 @@ gets everything vanilla Claude Code provides, plus the persona theming.
 With immersion "none", the preset is used with no append — identical
 to vanilla Claude Code.
 
-**Finding:** this was silently degrading aclaude from day one. The
+**Finding:** this was silently degrading forestage from day one. The
 persona prompt included "You are a software engineering assistant"
 as a poor substitute for Claude Code's full system prompt. The preset
 approach is the correct architecture for any wrapper.
@@ -139,13 +139,13 @@ with bordered panels, a statusline below, and output scrolling above the
 input. This is the proprietary CLI's terminal rendering — the SDK provides
 a message stream, not a terminal UI.
 
-aclaude uses Node.js `readline` — traditional shell-style inline input
+forestage uses Node.js `readline` — traditional shell-style inline input
 where prompts and responses are mixed sequentially. This works but feels
 less polished than Claude Code's TUI. It's the most visible UX difference
-between aclaude and vanilla Claude Code.
+between forestage and vanilla Claude Code.
 
 Building a custom TUI (e.g. with ink, blessed, or raw ANSI) is feasible
-and could differentiate aclaude — our TUI could include context bars,
+and could differentiate forestage — our TUI could include context bars,
 persona info, portrait display, and other things Claude Code doesn't show.
 This is a future probe, not a distribution-blocking gap.
 
@@ -154,7 +154,7 @@ This is a future probe, not a distribution-blocking gap.
 Claude Code renders markdown inline — headers, code blocks with syntax
 highlighting, lists, bold/italic, tables. The SDK streams raw text deltas
 from the Anthropic API. Claude Code's TUI handles rendering client-side.
-aclaude writes raw markdown to stdout via `process.stdout.write()`.
+forestage writes raw markdown to stdout via `process.stdout.write()`.
 
 This is part of the TUI gap (F14). Options for rendering:
 - **marked-terminal** — Node.js markdown-to-ANSI renderer

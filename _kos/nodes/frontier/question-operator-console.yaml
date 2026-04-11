@@ -1,12 +1,12 @@
 id: question-operator-console
 type: question
 confidence: frontier
-title: "aclaude as operator console over headless Claude Code"
+title: "forestage as operator console over headless Claude Code"
 content: |
-  Claude Code CLI runs headless as a data source. aclaude owns the entire
+  Claude Code CLI runs headless as a data source. forestage owns the entire
   UI surface — layout, images, metrics dashboards, context window gauges,
   health indicators. The NDJSON stream is a telemetry feed: token usage,
-  tool calls, reasoning, errors as structured events. aclaude parses,
+  tool calls, reasoning, errors as structured events. forestage parses,
   aggregates, and renders however it wants.
 
   This is stronger than either the SDK or the interactive TUI gave us:
@@ -17,7 +17,7 @@ content: |
   Enables: custom operator console with visual identity for the
   Director/Supervisor/Crew hierarchy. Marvel session health, context
   budget burn rate, tool call frequency, session cost — all rendered
-  by aclaude, not Claude Code.
+  by forestage, not Claude Code.
 
   Cleanly resolves the two-audience problem (question-two-audience):
   headless mode for agents under marvel is the same binary with no
@@ -35,7 +35,7 @@ content: |
   - Can we get OAuth inheritance when spawning claude headless?
   - What Rust TUI framework fits? ratatui is the obvious choice.
   - How does this interact with marvel's observability (OTEL)?
-    Is aclaude the local renderer of the same telemetry marvel
+    Is forestage the local renderer of the same telemetry marvel
     collects cluster-wide?
 edges:
   - target: question-two-audience
@@ -44,10 +44,10 @@ edges:
   - target: decision-language-rust
     type: derives
     note: "Rust ownership of rendering surface is the enabler"
-  - target: aae-orc::question-aclaude-ux-parity
+  - target: aae-orc::question-forestage-ux-parity
     type: supersedes
     note: "Not parity with Claude Code TUI — replacement of it"
-  - target: aae-orc::question-aclaude-tui
+  - target: aae-orc::question-forestage-tui
     type: supersedes
     note: "Not 'how to build a TUI' but 'build an operator console'"
 provenance:

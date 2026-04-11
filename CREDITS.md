@@ -11,6 +11,6 @@ The 100 persona theme rosters and character definitions were jointly
 developed by [slabgorb](https://github.com/slabgorb) and
 [arcaven](https://github.com/arcaven), originating from collaborative
 work on [pennyfarthing](https://github.com/1898andCo/pennyfarthing),
-aclaude's predecessor.
+forestage's predecessor.
 
 Thank you for the creative partnership that made the persona system what it is.

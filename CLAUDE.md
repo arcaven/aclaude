@@ -1,7 +1,11 @@
-# aclaude
+# forestage
 
 Opinionated Claude Code distribution with persona theming. Wraps the `claude`
 CLI as a subprocess using the NDJSON streaming protocol.
+
+Formerly called "aclaude." Renamed proactively to better respect Anthropic's
+intellectual property and brand. The code, architecture, and all functionality
+are unchanged — only the project name, binary name, and associated paths.
 
 Rewritten from TypeScript to Rust (2026-04-01) following the axios npm supply
 chain incident. See `docs/security/axios-supply-chain-2026-03-31.md`.
@@ -26,7 +30,7 @@ just start          # launch tmux session
 src/
   main.rs             CLI entry point (clap)
   lib.rs              Public API re-exports
-  error.rs            AclaudeError enum
+  error.rs            ForestageError enum
   config.rs           TOML config: 5-layer merge
   persona.rs          Theme loading (embedded), system prompt building
   session.rs          Claude CLI subprocess management
@@ -42,7 +46,7 @@ docs/                Architecture docs, research, security notes
 
 ### Claude Code Integration
 
-aclaude spawns `claude` as a child process. No SDK dependency — the NDJSON
+forestage spawns `claude` as a child process. No SDK dependency — the NDJSON
 subprocess protocol is the stable contract. For interactive sessions:
 
 ```
@@ -66,8 +70,8 @@ runtime without filesystem access — the binary is self-contained.
 ## Conventions
 
 - **Language:** Rust. Entire codebase.
-- **Config format:** TOML. Merge order: defaults -> global (~/.config/aclaude/) -> local (.aclaude/) -> env (ACLAUDE_*) -> CLI flags.
-- **Auth:** Delegates to Claude Code. Users authenticate with their own credentials. aclaude does not store, manage, or proxy authentication.
+- **Config format:** TOML. Merge order: defaults -> global (~/.config/forestage/) -> local (.forestage/) -> env (FORESTAGE_*) -> CLI flags.
+- **Auth:** Delegates to Claude Code. Users authenticate with their own credentials. forestage does not store, manage, or proxy authentication.
 - **No file deletion:** Never delete user files. Overwrite only with explicit intent.
 - **Parallel-safe:** Each session gets a UUID. No shared mutable state between sessions.
 - **Git workflow:** Gitflow. `develop` is the default branch. Branch from and

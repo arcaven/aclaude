@@ -6,11 +6,11 @@ content: |
   Per-repo install that never became distributable. Every user except the
   developer churned out because install/update was never solved. Concepts
   (persona theming, tmux integration, shell-based hooks) carried forward
-  to aclaude; implementation discarded entirely.
+  to forestage; implementation discarded entirely.
 graveyard:
   approach: "Build BYOA console as per-repo TypeScript tool installed via npm link"
   ruling: "Distribution was never solved. Sticky per-repo install meant nobody adopted it."
-  reopener: "None. aclaude is the replacement. Concepts live on, implementation is dead."
+  reopener: "None. forestage is the replacement. Concepts live on, implementation is dead."
 provenance:
   created_by: human
   session: session-008

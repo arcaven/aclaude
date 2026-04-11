@@ -2,7 +2,7 @@
 
 Date: 2026-04-10
 Context: Evaluated four Rust projects forked at github.com/arcaven as
-potential sources of inspiration and patterns for aclaude's Rust codebase.
+potential sources of inspiration and patterns for forestage's Rust codebase.
 All four forks are unmodified mirrors of their upstreams (0 commits ahead).
 
 ## Projects Assessed
@@ -149,13 +149,13 @@ tasks, safety, etc.). Best crate decomposition relative to its size.
 
 ## Licensing Analysis
 
-aclaude is MIT-licensed. The following analysis considers what borrowing
+forestage is MIT-licensed. The following analysis considers what borrowing
 code or patterns from each project would mean.
 
 ### claw-code-rust — MIT
 
 **License:** MIT
-**Compatibility with aclaude (MIT):** Full compatibility.
+**Compatibility with forestage (MIT):** Full compatibility.
 **What borrowing means:** Include the MIT copyright notice and permission
 notice in any files containing borrowed code. No other obligations.
 **Can we:**
@@ -169,7 +169,7 @@ notice in any files containing borrowed code. No other obligations.
 ### srg-claude-code-rust — Apache-2.0
 
 **License:** Apache License 2.0
-**Compatibility with aclaude (MIT):** Compatible. Apache-2.0 code can be
+**Compatibility with forestage (MIT):** Compatible. Apache-2.0 code can be
 included in an MIT project, but the Apache-2.0 terms apply to the borrowed
 portions.
 **What borrowing means:**
@@ -191,16 +191,16 @@ bookkeeping. The patent grant is a benefit, not a burden.
 ### claurst — GPL-3.0
 
 **License:** GNU General Public License v3.0
-**Compatibility with aclaude (MIT):** INCOMPATIBLE for code borrowing.
+**Compatibility with forestage (MIT):** INCOMPATIBLE for code borrowing.
 **What borrowing means:** Any code derived from GPL-3.0 source requires the
 entire resulting work to be distributed under GPL-3.0. This would force
-aclaude to relicense from MIT to GPL-3.0.
+forestage to relicense from MIT to GPL-3.0.
 **Can we:**
-- Copy code verbatim? NO — would require aclaude to become GPL-3.0.
+- Copy code verbatim? NO — would require forestage to become GPL-3.0.
 - Adapt patterns and rewrite? Patterns and ideas are not copyrightable.
   Clean-room reimplementation of an *idea* observed in GPL code is legal,
   but adapting *code* (even rewritten) creates a derivative work risk.
-- Use as a dependency? Only if aclaude becomes GPL-3.0.
+- Use as a dependency? Only if forestage becomes GPL-3.0.
 - Study for inspiration? Yes — reading code to understand an approach,
   then implementing independently, is not a GPL violation. But the
   implementation must be genuinely independent, not a "rewrite."
@@ -209,7 +209,7 @@ aclaude to relicense from MIT to GPL-3.0.
 contaminates the MIT license. Study the architecture and patterns only.
 Implement independently.
 
-**Practical guidance:** claurst's value to aclaude is in its *design
+**Practical guidance:** claurst's value to forestage is in its *design
 decisions* (12-crate workspace layout, which features to implement, how to
 organize slash commands), not its code. These are ideas, not expression.
 Never copy-paste from claurst. Never have the source open while writing.
@@ -219,7 +219,7 @@ Never copy-paste from claurst. Never have the source open while writing.
 **License:** MIT License with a custom rider that restricts usage by
 "Restricted Parties" defined as OpenAI, Anthropic, their affiliates, and
 anyone acting on their behalf.
-**Compatibility with aclaude (MIT):** Depends on aclaude's relationship
+**Compatibility with forestage (MIT):** Depends on forestage's relationship
 to Anthropic.
 
 **The rider states:**
@@ -229,14 +229,14 @@ to Anthropic.
 - Breach terminates the license immediately.
 - "Affiliate" means >50% ownership or power to direct management.
 
-**What this means for aclaude:**
-- aclaude wraps Claude Code (Anthropic's tool) via the Agent SDK. aclaude
+**What this means for forestage:**
+- forestage wraps Claude Code (Anthropic's tool) via the Agent SDK. forestage
   is NOT an Anthropic product — it's an independent project by Arcaven.
 - Arcaven is not an Anthropic affiliate (no ownership, no direction).
 - Using the Claude API or wrapping Claude Code does not make you an
   Anthropic affiliate under the rider's definition.
-- **However:** the rider must be preserved in derivative works. If aclaude
-  borrows code from pi_agent_rust, aclaude's distribution must include the
+- **However:** the rider must be preserved in derivative works. If forestage
+  borrows code from pi_agent_rust, forestage's distribution must include the
   rider. This could create confusion for users who assume MIT means MIT.
 
 **Can we:**
@@ -248,7 +248,7 @@ to Anthropic.
 - Study for inspiration? Yes, freely.
 
 **Risk:** MEDIUM. Not a legal blocker but an operational complexity.
-Including a "no Anthropic" rider in an aclaude distribution that wraps
+Including a "no Anthropic" rider in an forestage distribution that wraps
 Anthropic's Claude Code would look bizarre and potentially confuse users.
 The rider's enforceability is also untested.
 
@@ -268,7 +268,7 @@ in an MIT project that wraps an Anthropic product.
 | **claurst** | GPL-3.0 | **No** | Ideas only | Workspace scale, provider registry, auto-compact, MCP design |
 | **pi_agent_rust** | MIT+rider | Avoid | Yes | Elm TUI, extension hooks, VCR testing, jemalloc, forbid(unsafe) |
 
-### The safe path for aclaude:
+### The safe path for forestage:
 
 1. **Copy freely from** claw-code-rust (MIT). The Tool trait design and
    workspace layout are directly applicable.
