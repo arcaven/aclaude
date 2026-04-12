@@ -34,9 +34,18 @@ src/
   config.rs           TOML config: 5-layer merge
   persona.rs          Theme loading (embedded), system prompt building
   session.rs          Claude CLI subprocess management
-  hooks.rs            Tool usage tracking, audit trail
+  session_cmd.rs      Session subcommands (start, stop, list, attach)
+  bridge.rs           Claude Code NDJSON subprocess bridge
+  protocol.rs         NDJSON message types
+  protocol_ext.rs     Protocol extensions (permissions, hooks)
+  download.rs         CDN portrait download client
+  portrait.rs         Portrait loading and dimensions
+  paths.rs            XDG path resolution
+  petname.rs          Random session name generation
+  terminal.rs         Terminal capability detection
   statusline.rs       Tmux status bar rendering
   updater.rs          Self-update via GitHub releases
+  tui/                Custom TUI (ratatui)
 
 personas/themes/     118 YAML theme files (embedded at compile time via build.rs)
 config/              TOML config defaults and examples
