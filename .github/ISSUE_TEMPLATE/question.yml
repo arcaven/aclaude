@@ -1,0 +1,27 @@
+name: Question
+description: Ask a question about forestage
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question? Check the [README](https://github.com/ArcavenAE/forestage/blob/develop/README.md) first.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What would you like to know?
+    validations:
+      required: true
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      options:
+        - Installation / setup
+        - Configuration
+        - Usage
+        - Contributing / development
+        - Integration with other tools
+        - Other

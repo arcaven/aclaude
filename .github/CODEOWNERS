@@ -1,0 +1,24 @@
+# CODEOWNERS -- forestage
+# Gate files that control project direction, AI behavior, and infrastructure.
+# Files WITH entries here require @arcaven approval to merge.
+# Files WITHOUT entries can merge with CI-only gates.
+#
+# Syntax: later rules override earlier ones for the same path.
+# Reference: https://docs.github.com/articles/about-code-owners
+
+# Agent instructions and rules
+CLAUDE.md                         @arcaven
+/.claude/                         @arcaven
+
+# Safety
+/.env                             @arcaven
+/.gitignore                       @arcaven
+
+# CI/CD and infrastructure (includes this file)
+/.github/                         @arcaven
+
+# Governance
+LICENSE                           @arcaven
+SECURITY.md                       @arcaven
+CODE_OF_CONDUCT.md                @arcaven
+CONTRIBUTING.md                   @arcaven
