@@ -8,7 +8,7 @@ Follows the kos process: Orient → Ideate → Question → Probe → Harvest �
 Authoritative graph: `_kos/nodes/`.
 Cross-repo questions belong in the orchestrator's charter.
 
-Last updated: 2026-04-11 (session-013: rename to forestage, portrait distribution infra)
+Last updated: 2026-04-12 (session-016: charter management probe — content migration from orchestrator)
 
 ---
 
@@ -132,7 +132,7 @@ macOS). No tmux-cmc changes required (existing set_option API sufficient).
 
 *Actively open — under exploration, not yet resolved.*
 
-### F1: Two-Audience Problem [partially resolved]
+### F1: Two-Audience Problem and UX Parity [partially resolved]
 
 forestage serves human operators (TUI, status bars, persona flair) and
 autonomous agents under marvel (fast startup, minimal overhead, programmatic
@@ -140,11 +140,27 @@ control). The `--mode forestage|claude` flag provides runtime selection, and
 the bridge architecture (B4) validates the split: same subprocess protocol,
 different consumers.
 
+**UX parity is existential.** If wrapping Claude Code means a worse Claude
+Code, forestage fails regardless of persona theming or config management.
+The wrapper must be transparent — additive only, never subtractive. Concrete
+risks: Claude Code ships updates frequently — does the subprocess protocol
+surface new features immediately, or is there lag? Does subprocess invocation
+add latency to tool execution or streaming that degrades interactive use? Do
+Claude Code features (slash commands, hooks, MCP servers, permission modes)
+pass through cleanly, or does forestage need to reimplement them?
+
+Partial answer (2026-03-18): the subprocess protocol is additive when
+configured correctly. All tools, settings, CLAUDE.md, MCP servers, and
+skills pass through. TUI-specific slash commands (e.g. /stats) produce no
+output — this is a rendering gap, not a capability gap.
+
 Remaining questions: should marvel teams use `--mode claude` (no TUI
 overhead) or a third mode (headless NDJSON consumer with no rendering)?
 How does the bridge layer serve a marvel sidecar that monitors agent
 sessions? Is the SessionMetrics Arc<Mutex<>> the right interface for
-external consumers, or does marvel need a different contract?
+external consumers, or does marvel need a different contract? Can
+`--input-format stream-json` handle all interactive input patterns
+(multi-line, file references, image paste)?
 
 Cross-ref: orchestrator F13 (UX parity), F16 (assumption provenance).
 
@@ -157,16 +173,59 @@ is more reliable than bun compile's virtual FS — makes bundling more
 attractive than it was in TypeScript. Possible hybrid: bundle defaults, load
 additional from ~/.local/share/forestage/ or via marvel pack resolution.
 
+**Pack extraction angle:** themes are content, not code. Other BYOA consoles
+(zclaude, dclaude) could use the same themes — the 118 embedded YAMLs are a
+forestage-only silo right now. A pack-based model would load themes at runtime
+from `~/.local/share/forestage/packs/themes/` or wherever marvel resolves
+them. Questions specific to extraction: does this pack include portraits or
+just theme YAML? Is there a "built-in default" set that ships with the binary,
+with packs as additive? How does this interact with marvel's 4-scope
+resolution (repo → shared → user → system)?
+
+Depends on: F7 (Persona Model) — pack format should encode the correct
+theme/persona/role model, not inherit pennyfarthing's role-first binding.
+
 Cross-ref: orchestrator F12 (persona pack), F15 (persona model).
 
 ### F3: Session Bootstrap Layering
 
-Docker-like model: entrypoint (baked) → installed base (packs) → session
-injection (per-launch). forestage spawns claude with --append-system-prompt
-for persona injection. Open tension: Claude Code config inheritance (full,
-isolated, or switchable). For autonomous agents: different bootstrap (no TUI,
-task assignment, workspace boundaries).
+The session needs to be bootstrapped with the right context — persona,
+operating instructions, project rules. Three layers analogous to Docker:
 
+1. **Entrypoint** (baked into binary) — "you are forestage." Core identity,
+   persona system, operating instructions. Always present. Not overridable
+   without rebuilding.
+2. **Installed base** (on disk, updateable) — packs, themes, rules, commands
+   installed at `~/.local/share/forestage/` or via marvel. Additive,
+   versionable, shared across sessions.
+3. **Session injection** (per-launch) — which persona, which project, which
+   rules to load, environment overrides, feature flags. Ephemeral,
+   session-scoped.
+
+**The Claude Code config conflict:** forestage inherits Claude Code's config
+system (`~/.claude/`, `.claude/rules/`, CLAUDE.md, settings.json) via
+`settingSources`. Users may want three different behaviors:
+- Full inheritance (additive — forestage layers on top of existing setup)
+- Isolated (forestage provides its own complete context, ignoring user's
+  Claude Code setup)
+- Switchable (different behavior for personal use vs. marvel-managed teams)
+
+This is a preference, not a fixed behavior. `settingSources: []` (empty) may
+be the isolated mode, but this is unverified. A `--no-inherit` flag is an
+option. Per-workspace configuration in marvel would also let teams run with
+full isolation while personal sessions inherit.
+
+**For autonomous agents (marvel teams):** The bootstrap model is different.
+An agent team member doesn't need TUI instructions or persona flair
+introduction — it needs task assignment, tool permissions, workspace
+boundaries, communication protocol. How marvel injects session context
+(environment variables, generated CLAUDE.md, pack resolution) is unresolved.
+
+Questions: How does forestage's config layer interact with Claude Code's
+`settingSources`? Should the entrypoint be a system prompt segment (currently
+`preset: 'claude_code', append: personaPrompt`) or something more structured?
+
+Depends on: F2 (Theme Bundling), F7 (Persona Model).
 Cross-ref: orchestrator F18.
 
 ### F4: Version Manager Coordination
@@ -185,6 +244,20 @@ findings survive: brew tap pipeline pattern, dual alpha/stable channels,
 self-update UX, code signing workflow. Need to re-validate: binary size,
 cross-compilation, CI pipeline (currently failing on cargo-deny config).
 
+**Why this matters beyond forestage itself:** solving distribution unblocks
+the full platform. marvel needs forestage as a real workload to manage
+(not just source-cloned). director needs forestage instances it can connect.
+spectacle/packs need an installed tool to test pack injection against. And RD
+itself needs forestage usable in daily work immediately — working from source
+is a developer-only path. The pennyfarthing failure mode was: per-repo
+install, never distributable, every user except the developer churned.
+
+Three axes to re-validate in Rust: self-updating binary (following Claude
+Code's `~/.local/share/` + symlink rotation model), brew formula (user
+sovereignty), and dual-track stable/alpha channels (following ThreeDoors'
+proven model). Version manager coordination (F4) is the unresolved tension
+between these axes.
+
 Cross-ref: orchestrator F11.
 
 ### F6: TUI Performance and Edge Cases
@@ -199,7 +272,93 @@ and completeness questions:
 - Portrait cell_size calculation may not match ratatui-image's internal
   scaling.
 
+**Patterns adopted from adversarial review of four Rust Claude Code
+reimplementations (session-011), already implemented or targets for
+future work:**
+- State machine: AppStatus enum drives visual feedback and input gating
+  (implemented). Observed in srg-claude-code-rust (Apache-2.0).
+- Streaming text batching: 45ms/2KB buffer prevents per-token render
+  cycles (implemented). Observed in pi_agent_rust's UiStreamDeltaBatcher.
+- Render cache with split policy: segment long messages at paragraph
+  boundaries to prevent cache bloat. Not yet implemented — F010-e may be
+  caused by its absence. Observed in srg-claude-code-rust.
+- Incremental markdown parsing: append chunks to renderer as they arrive,
+  invalidate render cache. Don't wait for complete response.
+- VCR cassette testing: record Claude Code's NDJSON output, replay
+  deterministically. Observed in pi_agent_rust. Not yet implemented.
+
+**What the TUI provides that vanilla Claude Code doesn't:**
+- Persona theming (character name, styled prompts, portrait overlay)
+- Custom status bar with token tracking, cost, permission mode
+- Configurable layouts (portrait position, theme colors, tmux integration)
+- Marvel-ready: same subprocess protocol works for autonomous agents
+- Extension hooks (pre/post tool display, custom overlays)
+
+**Open questions not yet resolved:**
+- Does `--include-partial-messages` provide enough granularity for smooth
+  streaming text, or do we need a custom tokenizer?
+- Can permission prompts be intercepted and re-rendered in forestage's
+  TUI, or must they use Claude Code's own prompts?
+- Should the TUI be a separate crate (forestage-tui) or inline? The
+  reviewed projects split: claw-code-rust separates, claurst separates,
+  srg-claude-code-rust inlines.
+
+See: `docs/research/rust-claude-reimplementations-20260410.md` for the
+full adversarial review with licensing analysis.
 Cross-ref: orchestrator F14 (remaining open questions).
+
+### F7: Persona Model — Themes, Personas, and Roles as Separate Concepts
+
+The current persona system inherited from pennyfarthing conflates three
+distinct concepts:
+
+- **Theme** — a fictional universe (Dune, Hitchhiker's Guide) with a
+  roster of characters
+- **Persona** — an individual character (Trillian, Paul Atreides) with
+  personality, style, expertise, catchphrases
+- **Role** — a function the user wants filled (dev, reviewer, architect)
+  — independent of any specific character
+
+The current implementation uses role as the primary key within a theme:
+`theme.agents["dev"]` returns exactly one character. This makes it
+impossible to assign any persona to any role — "Trillian as reviewer"
+requires Trillian to be the reviewer entry in the theme YAML.
+
+The CLI says `persona list` but lists themes. Config uses `persona.theme`
+and `persona.role` as if they're properties of the same concept. The
+language is mixed throughout CLAUDE.md, CLI help, and code.
+
+The correct model: themes provide character rosters, personas are
+individual characters from any source, roles are user-assigned functions.
+Any persona can fill any role. A user might want Trillian (from
+Hitchhiker's Guide) as their dev persona and Paul Atreides (from Dune)
+as their reviewer — the current model can't express this.
+
+This affects: the pack format for theme extraction (F2), how marvel assigns
+personas to agents in team configurations, and the CLI surface (persona list,
+persona select, config keys).
+
+Cross-ref: orchestrator F15.
+
+### F8: Session Maturity — Open Issues
+
+tmux-cmc core protocol works on macOS + Linux. Session management CLI shipped
+(B5). The resolved issues are historical record — see session log. Remaining
+open items:
+
+- **One-shot prompt outputs raw JSON instead of text** (forestage#13) — the
+  programmatic flow needs its own output rendering path.
+- **Pane management** (forestage#17) — add/list panes within sessions. Needed
+  for multi-agent layouts (supervisor + workers in one session). This is the
+  remaining gap to marvel: without pane management, marvel can't arrange
+  agent teams within a single tmux session.
+- **No integration tests against live tmux on Linux** — all platform bugs
+  found by users, not by tests. B13 (platform-specific testing) applies here.
+
+The control session architecture question (#15) is resolved (B5: smart
+Pattern 1/2 upgrade). The terminal image question is resolved (B6).
+
+Cross-ref: orchestrator F20.
 
 ---
 
