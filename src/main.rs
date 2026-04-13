@@ -136,9 +136,9 @@ enum SessionAction {
         /// tmux socket name override
         #[arg(long)]
         socket: Option<String>,
-        /// Don't attach terminal to the session after starting
+        /// Attach terminal to the session after starting
         #[arg(long)]
-        no_attach: bool,
+        attach: bool,
         /// Force create a new session (petname) instead of joining existing
         #[arg(long)]
         new: bool,
@@ -421,7 +421,7 @@ fn main() -> anyhow::Result<()> {
                 SessionAction::Start {
                     name,
                     socket,
-                    no_attach,
+                    attach,
                     new,
                     persona,
                     role,
@@ -430,7 +430,7 @@ fn main() -> anyhow::Result<()> {
                         &cfg,
                         socket.as_deref(),
                         name.as_deref(),
-                        !no_attach,
+                        attach,
                         new,
                         persona.as_deref(),
                         role.as_deref(),
