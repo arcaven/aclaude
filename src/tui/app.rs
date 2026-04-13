@@ -713,7 +713,6 @@ pub fn render_conversation(frame: &mut Frame, state: &mut AppState, area: Rect) 
                 let style = Style::default()
                     .fg(Color::Cyan)
                     .add_modifier(Modifier::BOLD);
-                lines.push(Line::from(Span::styled("You: ", style)));
                 for text_line in text.lines() {
                     lines.push(Line::from(Span::styled(text_line.to_string(), style)));
                 }
