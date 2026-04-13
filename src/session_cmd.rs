@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use anyhow::{Context, Result};
-use tmux_cmc::{Client, ConnectOptions, NewSessionOptions, SplitPaneOptions, WindowId};
+use tmux_cmc::{Client, ConnectOptions, NewSessionOptions, NewWindowOptions};
 
 use crate::config::ForestageConfig;
 use crate::petname;
@@ -85,13 +85,14 @@ fn smart_connect(socket: &str, session_name: &str, is_new_session: bool) -> Resu
     Client::connect(&opts).context("failed to connect to tmux — is tmux installed?")
 }
 
-/// Start (or add a pane to) a forestage tmux session.
+/// Start (or add a window to) a forestage tmux session.
 ///
-/// - If the target session doesn't exist: create it with the first pane.
-/// - If the target session exists: add a new pane to it via split_pane.
+/// - If the target session doesn't exist: create it with the first window.
+/// - If the target session exists: add a new window to it (full-screen tab,
+///   visible in the tmux status bar, switchable with Ctrl-b <number>).
 /// - `--new` forces creation of a fresh session with a petname.
 /// - `--persona` and `--role` are passed through to the forestage binary
-///   launched in the new pane.
+///   launched in the new window.
 pub fn run_session_start(
     config: &ForestageConfig,
     socket: Option<&str>,
@@ -115,28 +116,31 @@ pub fn run_session_start(
         .is_ok_and(|o| o.status.success());
 
     if already_exists {
-        // Session exists — add a new pane to it
-        println!("Adding pane to session '{session_name}'...");
+        // Session exists — add a new window (full-screen tab)
+        println!("Adding window to session '{session_name}'...");
 
         let client = smart_connect(&socket, &session_name, false)?;
 
-        // Query window ID for the current window in this session
-        let win_id = query_window_id(&client, &session_name)?;
+        // Query session ID ($n) for the existing session
+        let session_id = query_session_id(&client, &session_name)?;
 
-        // Split the window to create a new pane
-        let pane_id = client
-            .split_pane(&SplitPaneOptions {
-                target: win_id,
-                vertical: false, // horizontal split (stacked)
+        // Create a new window in this session
+        let window_name = window_label(persona, role);
+        let _win_id = client
+            .new_window(&NewWindowOptions {
+                session: session_id,
+                name: Some(window_name),
+                detached: true,
                 ..Default::default()
             })
-            .context("split-pane failed")?;
+            .context("new-window failed")?;
 
-        // Launch forestage in the new pane
-        launch_in_pane_by_id(&client, &pane_id, persona, role)?;
+        // Launch forestage in the new window's default pane
+        // The new window is the last window in the session — target it by index
+        launch_in_last_window(&client, &session_name, persona, role)?;
         drop(client);
 
-        println!("Pane added to session '{session_name}'.",);
+        println!("Window added to session '{session_name}'.");
     } else {
         // Session doesn't exist — create it
         let existing_count = user_session_count(&socket);
@@ -200,15 +204,7 @@ pub fn run_session_start(
 
 /// Configure statusline for a session.
 fn configure_session(client: &Client, config: &ForestageConfig, session_name: &str) -> Result<()> {
-    // Query the session ID
-    let resp = client
-        .run_command(&format!(
-            "display-message -p -t '{session_name}' '#{{session_id}}'"
-        ))
-        .context("failed to query session id")?;
-    let id_str = resp.first_line().unwrap_or("$0").trim().to_owned();
-    let session = tmux_cmc::SessionId::new(&id_str)
-        .unwrap_or_else(|_| tmux_cmc::SessionId::new("$0").expect("$0 is valid"));
+    let session = query_session_id(client, session_name)?;
 
     client
         .set_status_enabled(&session, true)
@@ -245,6 +241,28 @@ fn forestage_command(persona: Option<&str>, role: Option<&str>) -> String {
     cmd
 }
 
+/// Generate a window name label from persona/role, or a default.
+fn window_label(persona: Option<&str>, role: Option<&str>) -> String {
+    match (persona, role) {
+        (Some(p), Some(r)) => format!("{p}:{r}"),
+        (Some(p), None) => p.to_owned(),
+        (None, Some(r)) => r.to_owned(),
+        (None, None) => "forestage".to_owned(),
+    }
+}
+
+/// Query the session ID ($n) for a named session.
+fn query_session_id(client: &Client, session_name: &str) -> Result<tmux_cmc::SessionId> {
+    let resp = client
+        .run_command(&format!(
+            "display-message -p -t '{session_name}' '#{{session_id}}'"
+        ))
+        .context("failed to query session id")?;
+    let id_str = resp.first_line().unwrap_or("$0").trim().to_owned();
+    tmux_cmc::SessionId::new(&id_str)
+        .map_err(|_| anyhow::anyhow!("invalid session id from tmux: {id_str}"))
+}
+
 /// Launch forestage binary in the first pane of a session (for new sessions).
 fn launch_in_pane(
     client: &Client,
@@ -259,28 +277,19 @@ fn launch_in_pane(
     Ok(())
 }
 
-/// Query the window ID of the current window in a session.
-fn query_window_id(client: &Client, session_name: &str) -> Result<WindowId> {
-    let resp = client
-        .run_command(&format!(
-            "display-message -p -t '{session_name}' '#{{window_id}}'"
-        ))
-        .context("failed to query window id")?;
-    let id_str = resp.first_line().unwrap_or("@0").trim().to_owned();
-    WindowId::new(&id_str).map_err(|_| anyhow::anyhow!("invalid window id from tmux: {id_str}"))
-}
-
-/// Launch forestage binary in a specific pane (for added panes).
-fn launch_in_pane_by_id(
+/// Launch forestage in the last (most recently created) window of a session.
+fn launch_in_last_window(
     client: &Client,
-    pane_id: &tmux_cmc::PaneId,
+    session_name: &str,
     persona: Option<&str>,
     role: Option<&str>,
 ) -> Result<()> {
+    // Target the last window's first pane: {session}:{$} is tmux's
+    // special token for the highest-numbered window index.
     let cmd = forestage_command(persona, role);
     client
-        .run_command(&format!("send-keys -t '{pane_id}' '{cmd}' Enter"))
-        .context("send-keys to new pane failed")?;
+        .run_command(&format!("send-keys -t '{session_name}:$' '{cmd}' Enter"))
+        .context("send-keys to new window failed")?;
     Ok(())
 }
 
