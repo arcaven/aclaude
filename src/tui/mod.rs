@@ -117,7 +117,7 @@ pub async fn run_tui(config: &ForestageConfig) -> Result<()> {
 
     let mut portrait_widget = PortraitWidget::new();
     if let Some(pw) = &mut portrait_widget {
-        pw.set_size(PortraitSize::Medium, &portrait_paths);
+        pw.set_size(PortraitSize::Large, &portrait_paths);
     }
 
     execute!(
@@ -262,11 +262,12 @@ pub async fn run_tui(config: &ForestageConfig) -> Result<()> {
                                     "Portrait: /persona portrait [on|off|top|bottom|size <s>]",
                                     "",
                                     "Keys:",
-                                    "  Ctrl+C quit         Ctrl+O transcript     Ctrl+X expand tool",
+                                    "  Ctrl+C quit/copy    Ctrl+O transcript     Ctrl+X cut/expand",
                                     "  Ctrl+A/E home/end   Ctrl+W del word       Ctrl+U clear line",
                                     "  Ctrl+P portrait pos Alt+P portrait on/off Alt+S portrait size",
                                     "  Alt+T thinking      Shift+Tab perm mode   Ctrl+G editor",
-                                    "  Up/Down history     Tab complete          Mouse wheel scroll",
+                                    "  Alt+M select mode   Shift+Arrow select    Mouse wheel scroll",
+                                    "  Up/Down history     Tab complete",
                                 ].join("\n");
                                 state.items.push(app::ConversationItem::SystemNotice { text: help_text });
                             }
@@ -343,6 +344,17 @@ pub async fn run_tui(config: &ForestageConfig) -> Result<()> {
                                 }
                             }
 
+                            InputAction::ToggleMouseCapture => {
+                                if mouse_captured {
+                                    let _ = execute!(io::stdout(), DisableMouseCapture);
+                                    mouse_captured = false;
+                                    state.set_status("Mouse capture off — select text with mouse, Alt+M to re-enable".to_string());
+                                } else {
+                                    let _ = execute!(io::stdout(), EnableMouseCapture);
+                                    mouse_captured = true;
+                                    state.set_status("Mouse capture on — scroll with mouse wheel".to_string());
+                                }
+                            }
                             InputAction::PortraitTogglePosition => {
                                 state.portrait_position = state.portrait_position.toggle();
                                 state.set_status(format!(

@@ -337,6 +337,8 @@ pub enum InputAction {
     CutSelection(String),
     /// Open external editor for input (Ctrl+G).
     OpenEditor,
+    /// Toggle mouse capture for text selection (Alt+M).
+    ToggleMouseCapture,
     /// Toggle portrait position top/bottom (Ctrl+P).
     PortraitTogglePosition,
     /// Toggle portrait on/off (Alt+P).
@@ -611,6 +613,7 @@ pub fn handle_key(
         (KeyModifiers::ALT, KeyCode::Char('s')) => InputAction::PortraitCycleSize,
 
         // Alt shortcuts
+        (KeyModifiers::ALT, KeyCode::Char('m')) => InputAction::ToggleMouseCapture,
         (KeyModifiers::ALT, KeyCode::Char('t')) => InputAction::ToggleThinking,
 
         // Cycle permission mode (Shift+Tab)
