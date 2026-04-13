@@ -1,0 +1,24 @@
+session:
+  model: claude-sonnet-4-6
+  max_tokens: 200000
+
+persona:
+  theme: the-expanse
+  role: dev
+  immersion: high  # high | medium | low | none
+
+statusline:
+  enabled: true
+  git_info: true
+  context_bar: true
+
+telemetry:
+  enabled: false
+  otel_endpoint: ""
+
+tmux:
+  layout: bottom
+  socket: forestage
+
+portrait:
+  display: auto  # auto | always | never

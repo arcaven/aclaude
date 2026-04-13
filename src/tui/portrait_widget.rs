@@ -14,6 +14,37 @@ use ratatui_image::{Resize, StatefulImage};
 use super::app::PortraitSize;
 use crate::portrait::PortraitPaths;
 
+/// Build a Picker from environment variables set by session_cmd during
+/// session creation. Avoids the unreliable per-pane stdio query inside tmux.
+fn picker_from_env() -> Option<Picker> {
+    use ratatui_image::picker::ProtocolType;
+
+    let proto_str = std::env::var("FORESTAGE_IMAGE_PROTOCOL").ok()?;
+    let proto = match proto_str.as_str() {
+        "kitty" => ProtocolType::Kitty,
+        "iterm2" => ProtocolType::Iterm2,
+        "sixel" => ProtocolType::Sixel,
+        _ => return None, // halfblocks or unknown — fall through to query
+    };
+
+    let font_size = std::env::var("FORESTAGE_IMAGE_FONT_SIZE")
+        .ok()
+        .and_then(|s| {
+            let parts: Vec<&str> = s.split('x').collect();
+            if parts.len() == 2 {
+                Some((parts[0].parse::<u16>().ok()?, parts[1].parse::<u16>().ok()?))
+            } else {
+                None
+            }
+        })
+        .unwrap_or((10, 20));
+
+    #[allow(deprecated)] // no non-deprecated constructor with known font size
+    let mut picker = Picker::from_fontsize(font_size);
+    picker.set_protocol_type(proto);
+    Some(picker)
+}
+
 /// Portrait widget state.
 pub struct PortraitWidget {
     picker: Picker,
@@ -29,7 +60,7 @@ impl PortraitWidget {
     /// Must be called AFTER `crossterm::terminal::enable_raw_mode()` and
     /// BEFORE `Terminal::new()`.
     pub fn new() -> Option<Self> {
-        let picker = Picker::from_query_stdio().ok()?;
+        let picker = picker_from_env().or_else(|| Picker::from_query_stdio().ok())?;
         Some(Self {
             picker,
             image_state: None,

@@ -1,0 +1,38 @@
+# forestage configuration
+# Copy to ~/.config/forestage/config.yaml (global) or .forestage/config.yaml (local)
+#
+# Supports YAML (preferred) and TOML formats.
+# Resolution order (last wins):
+#   1. Built-in defaults (config/defaults.yaml)
+#   2. Global: $XDG_CONFIG_HOME/forestage/config.yaml
+#   3. Local: .forestage/config.yaml
+#   4. Environment: FORESTAGE_* prefix
+#   5. CLI flags
+
+session:
+  # model: claude-sonnet-4-6
+  # max_tokens: 16384
+
+persona:
+  # theme: hitchhikers-guide
+  # role: dev                    # which character from theme roster
+  # immersion: high              # high | medium | low | none
+
+statusline:
+  # enabled: true
+  # git_info: true
+  # context_bar: true
+
+telemetry:
+  # enabled: false
+  # otel_endpoint: ""
+
+tmux:
+  # layout: bottom               # bottom | top | left | right
+  # socket: forestage             # tmux socket name (marvel varies per team)
+
+portrait:
+  # display: auto                # auto | always | never
+  #                              # auto: detect terminal support
+  #                              # always: attempt regardless of detection
+  #                              # never: disable portrait display

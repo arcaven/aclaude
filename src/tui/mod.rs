@@ -484,15 +484,16 @@ pub async fn run_tui(config: &ForestageConfig) -> Result<()> {
                             }
                         }
                     }
-                    Some(Event::FocusGained) => {
-                        // Terminal regained focus — tmux window switch clears
-                        // Kitty graphics, so force the portrait to re-send.
+                    Some(Event::FocusGained) | Some(Event::Resize(_, _)) => {
+                        // Focus gained (window switch) or resize (new window added)
+                        // clears the terminal graphics layer. Clear ratatui's diff
+                        // cache and force portrait re-send.
+                        let _ = terminal.clear();
                         if let Some(pw) = &mut portrait_widget {
                             pw.force_redraw();
                         }
                     }
                     Some(Event::FocusLost) => {}
-                    Some(Event::Resize(_, _)) => {}
                     Some(_) => {}
                     None => break Ok(()),
                 }
@@ -506,6 +507,7 @@ pub async fn run_tui(config: &ForestageConfig) -> Result<()> {
 
                 state.frame_count += 1;
                 state.tick_status_timeout();
+
 
                 let has_perm_prompt = state.pending_permission.is_some();
 

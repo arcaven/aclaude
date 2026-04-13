@@ -109,7 +109,7 @@ fn default_layout() -> String {
     "bottom".to_string()
 }
 fn default_socket() -> String {
-    "ac".to_string()
+    "forestage".to_string()
 }
 fn default_status_interval() -> u32 {
     2
@@ -192,28 +192,67 @@ fn xdg_config_home() -> PathBuf {
         })
 }
 
+/// Resolve a config file path, preferring YAML over TOML.
+/// Checks: <base>.yaml, <base>.yml, <base>.toml — returns the first that exists.
+/// Falls back to <base>.yaml if none exist (for display purposes).
+fn resolve_config_path(dir: &Path, stem: &str) -> PathBuf {
+    for ext in ["yaml", "yml", "toml"] {
+        let candidate = dir.join(format!("{stem}.{ext}"));
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    // None exist — return the YAML path as the preferred default
+    dir.join(format!("{stem}.yaml"))
+}
+
 pub fn config_paths() -> ConfigPaths {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     ConfigPaths {
-        defaults: PathBuf::from("config/defaults.toml"),
-        global: xdg_config_home().join("forestage/config.toml"),
-        local: cwd.join(".forestage/config.toml"),
+        defaults: resolve_config_path(Path::new("config"), "defaults"),
+        global: resolve_config_path(&xdg_config_home().join("forestage"), "config"),
+        local: resolve_config_path(&cwd.join(".forestage"), "config"),
     }
 }
 
-/// Load a TOML file into a generic table. Returns empty table if missing.
+/// Detect format from file extension.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ConfigFormat {
+    Yaml,
+    Toml,
+}
+
+fn detect_format(path: &Path) -> ConfigFormat {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("toml") => ConfigFormat::Toml,
+        _ => ConfigFormat::Yaml, // .yaml, .yml, or unknown → try YAML
+    }
+}
+
+/// Load a config file (YAML or TOML) into a toml::Table for merging.
+/// Returns empty table if the file doesn't exist.
 /// Warns on stderr if the file exists but fails to parse.
-fn load_toml_table(path: &Path) -> toml::Table {
+fn load_config_table(path: &Path) -> toml::Table {
     let content = match fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => return toml::Table::new(),
     };
-    match content.parse::<toml::Table>() {
-        Ok(table) => table,
-        Err(e) => {
-            eprintln!("warning: failed to parse {}: {e}", path.display());
-            toml::Table::new()
-        }
+
+    match detect_format(path) {
+        ConfigFormat::Toml => match content.parse::<toml::Table>() {
+            Ok(table) => table,
+            Err(e) => {
+                eprintln!("warning: failed to parse {}: {e}", path.display());
+                toml::Table::new()
+            }
+        },
+        ConfigFormat::Yaml => match serde_yaml::from_str::<toml::Table>(&content) {
+            Ok(table) => table,
+            Err(e) => {
+                eprintln!("warning: failed to parse {}: {e}", path.display());
+                toml::Table::new()
+            }
+        },
     }
 }
 
@@ -278,19 +317,19 @@ pub fn load_config(overrides: Option<&toml::Table>) -> Result<ForestageConfig> {
         .parse::<toml::Table>()
         .expect("default config parses");
 
-    let file_defaults = load_toml_table(&paths.defaults);
+    let file_defaults = load_config_table(&paths.defaults);
     if !file_defaults.is_empty() {
         deep_merge(&mut table, &file_defaults);
     }
 
     // Layer 2: global user config
-    let global = load_toml_table(&paths.global);
+    let global = load_config_table(&paths.global);
     if !global.is_empty() {
         deep_merge(&mut table, &global);
     }
 
     // Layer 3: local project config
-    let local = load_toml_table(&paths.local);
+    let local = load_config_table(&paths.local);
     if !local.is_empty() {
         deep_merge(&mut table, &local);
     }

@@ -28,7 +28,7 @@
 
 [tmux]
 # layout = "bottom"               # bottom | top | left | right
-# socket = "ac"
+# socket = "forestage"
 
 [portrait]
 # display = "auto"                # auto | always | never

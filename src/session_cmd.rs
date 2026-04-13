@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -27,6 +28,60 @@ fn socket_name(config: &ForestageConfig, socket: Option<&str>) -> String {
         .unwrap_or_else(|| config.tmux.socket.clone())
 }
 
+/// Path to the tmux socket file for a given socket name.
+/// tmux uses /tmp/tmux-<uid>/<socket> on macOS/Linux.
+fn socket_path(socket: &str) -> PathBuf {
+    // TMUX_TMPDIR overrides the default location
+    let base = std::env::var("TMUX_TMPDIR").unwrap_or_else(|_| {
+        let uid = std::process::id(); // PID, not UID — need nix or Command
+        // Shell out for UID since we forbid unsafe
+        let uid_str = Command::new("id")
+            .arg("-u")
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_owned())
+            .unwrap_or_else(|| uid.to_string());
+        format!("/tmp/tmux-{uid_str}")
+    });
+    PathBuf::from(base).join(socket)
+}
+
+/// Clean up a stale tmux socket if the server is confirmed dead.
+///
+/// Only removes the socket file when: the file exists AND the server
+/// reports "server exited unexpectedly" (tmux's specific error for a
+/// dead server behind a live socket file). Does NOT remove on other
+/// failures (no sessions, server busy, etc.) to avoid killing live servers.
+fn cleanup_stale_socket(socket: &str) {
+    let path = socket_path(socket);
+    if !path.exists() {
+        return;
+    }
+
+    // Ping the server — any successful command means it's alive.
+    let output = Command::new("tmux")
+        .args(["-L", socket, "list-sessions"])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {} // server alive, nothing to do
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            // Only remove if tmux specifically says the server is dead.
+            // "server exited unexpectedly" = dead server behind stale socket.
+            // "no server running" = socket exists but server gone.
+            // Any other error = leave it alone.
+            if stderr.contains("server exited unexpectedly") || stderr.contains("no server running")
+            {
+                eprintln!("Removing stale tmux socket: {}", path.display());
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        Err(_) => {} // couldn't even run tmux — don't touch the socket
+    }
+}
+
 /// Resolve the session name: use the provided name, or the config default.
 fn resolve_session_name(name: Option<&str>, config: &ForestageConfig) -> String {
     name.map(str::to_owned)
@@ -51,33 +106,39 @@ fn ctrl_session_exists(socket: &str) -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
-/// Connect to tmux via control mode using the smart default:
-/// - If no other sessions exist: attach control mode directly to the user's session (Pattern 1)
-/// - If other sessions exist or will exist: use the shared _ctrl session (Pattern 2)
+/// Connect to tmux via control mode.
+///
+/// tmux-cmc uses `new-session -A -D` which detaches other clients from the
+/// target session. This is safe for initial setup (Pattern 1: the session was
+/// just created, no one else is attached) but destructive when modifying an
+/// existing session that a user is viewing.
+///
+/// - **Pattern 1** (first session, no one attached): connect directly to the
+///   user's session. Safe because we just created it.
+/// - **Pattern 2** (anything else): use the shared `_ctrl` session running
+///   `cat`. Never disrupts attached clients.
 fn smart_connect(socket: &str, session_name: &str, is_new_session: bool) -> Result<Client> {
     let existing_count = user_session_count(socket);
-    let will_be_multi = existing_count > 0 && is_new_session;
-    let already_multi = existing_count > 1;
-    let has_ctrl = ctrl_session_exists(socket);
 
-    let use_ctrl = will_be_multi || already_multi || has_ctrl;
+    // Pattern 1 is only safe when we just created the session and no one
+    // else could be attached. That means: this IS the new session being
+    // created AND there are no other sessions on this socket.
+    let safe_for_pattern1 = is_new_session && existing_count == 0;
 
-    let opts = if use_ctrl {
-        // Pattern 2: shared control session
+    let opts = if safe_for_pattern1 {
+        // Pattern 1: attach directly to the user's session (just created)
+        ConnectOptions {
+            socket_name: Some(socket.to_owned()),
+            control_session_name: Some(session_name.to_owned()),
+            control_session_command: None,
+            ..ConnectOptions::default()
+        }
+    } else {
+        // Pattern 2: shared control session — never disrupts attached clients
         ConnectOptions {
             socket_name: Some(socket.to_owned()),
             control_session_name: Some(CTRL_SESSION.to_owned()),
             control_session_command: Some("cat".into()),
-            ..ConnectOptions::default()
-        }
-    } else {
-        // Pattern 1: attach directly to the user's session
-        // The session must exist first — caller creates it before connecting,
-        // or we create it here via new-session in the connect options.
-        ConnectOptions {
-            socket_name: Some(socket.to_owned()),
-            control_session_name: Some(session_name.to_owned()),
-            control_session_command: None, // don't override — the session runs a shell
             ..ConnectOptions::default()
         }
     };
@@ -108,6 +169,9 @@ pub fn run_session_start(
         resolve_session_name(session_name, config)
     };
     let socket = socket_name(config, socket);
+
+    // Clean up stale socket if the server crashed previously
+    cleanup_stale_socket(&socket);
 
     // Check if this session already exists
     let already_exists = Command::new("tmux")
@@ -178,7 +242,7 @@ pub fn run_session_start(
             }
 
             let client = smart_connect(&socket, &session_name, false)?;
-            configure_session(&client, config, &session_name)?;
+            configure_session(&client, config, &session_name, &socket)?;
             launch_in_pane(&client, &session_name, persona, role)?;
             drop(client);
         } else {
@@ -193,7 +257,7 @@ pub fn run_session_start(
                     ..Default::default()
                 })
                 .context("new-session failed")?;
-            configure_session(&client, config, &session_name)?;
+            configure_session(&client, config, &session_name, &socket)?;
             launch_in_pane(&client, &session_name, persona, role)?;
             drop(client);
         }
@@ -212,7 +276,12 @@ pub fn run_session_start(
 }
 
 /// Configure statusline for a session.
-fn configure_session(client: &Client, config: &ForestageConfig, session_name: &str) -> Result<()> {
+fn configure_session(
+    client: &Client,
+    config: &ForestageConfig,
+    session_name: &str,
+    socket: &str,
+) -> Result<()> {
     let session = query_session_id(client, session_name)?;
 
     client
@@ -233,7 +302,73 @@ fn configure_session(client: &Client, config: &ForestageConfig, session_name: &s
     // Ignore errors: older tmux versions don't have this option.
     let _ = client.set_global_option("allow-passthrough", "on");
 
+    // Forward terminal-level focus events to panes.
+    let _ = client.set_global_option("focus-events", "on");
+
+    // tmux window switches don't generate FocusGained events even with
+    // focus-events on. Use after-select-window hook to send the FocusIn
+    // escape sequence (\x1b[I) as hex bytes — unambiguous, no quoting issues.
+    let _ = Command::new("tmux")
+        .args([
+            "-L",
+            socket,
+            "set-hook",
+            "-g",
+            "after-select-window",
+            "send-keys -H 1b 5b 49",
+        ])
+        .output();
+
+    // Detect terminal image protocol ONCE from the real terminal (not from
+    // inside a tmux pane, where the picker query races with other panes).
+    // Store in tmux's global environment so all panes inherit it.
+    detect_and_set_image_protocol(socket);
+
     Ok(())
+}
+
+/// Detect the terminal's image protocol and font size, then store in tmux
+/// environment so panes can skip the (unreliable) per-pane picker query.
+fn detect_and_set_image_protocol(socket: &str) {
+    use ratatui_image::picker::Picker;
+
+    // Enable raw mode temporarily for the picker query
+    let raw_ok = crossterm::terminal::enable_raw_mode().is_ok();
+
+    if let Ok(picker) = Picker::from_query_stdio() {
+        let proto = match picker.protocol_type() {
+            ratatui_image::picker::ProtocolType::Kitty => "kitty",
+            ratatui_image::picker::ProtocolType::Iterm2 => "iterm2",
+            ratatui_image::picker::ProtocolType::Sixel => "sixel",
+            ratatui_image::picker::ProtocolType::Halfblocks => "halfblocks",
+        };
+        let font = picker.font_size();
+
+        let _ = Command::new("tmux")
+            .args([
+                "-L",
+                socket,
+                "set-environment",
+                "-g",
+                "FORESTAGE_IMAGE_PROTOCOL",
+                proto,
+            ])
+            .output();
+        let _ = Command::new("tmux")
+            .args([
+                "-L",
+                socket,
+                "set-environment",
+                "-g",
+                "FORESTAGE_IMAGE_FONT_SIZE",
+                &format!("{}x{}", font.0, font.1),
+            ])
+            .output();
+    }
+
+    if raw_ok {
+        let _ = crossterm::terminal::disable_raw_mode();
+    }
 }
 
 /// Build the forestage command string with optional persona/role overrides.
