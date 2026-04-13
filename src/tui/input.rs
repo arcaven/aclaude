@@ -192,6 +192,98 @@ impl InputState {
         self.end();
     }
 
+    /// Whether the buffer contains newlines (is multiline).
+    pub fn is_multiline(&self) -> bool {
+        self.buffer.contains('\n')
+    }
+
+    /// Whether the cursor is on the first line of a multiline buffer.
+    pub fn cursor_on_first_line(&self) -> bool {
+        let chars: Vec<char> = self.buffer.chars().collect();
+        // No newline before cursor → first line
+        !chars[..self.cursor.min(chars.len())].contains(&'\n')
+    }
+
+    /// Whether the cursor is on the last line of a multiline buffer.
+    pub fn cursor_on_last_line(&self) -> bool {
+        let chars: Vec<char> = self.buffer.chars().collect();
+        // No newline after cursor → last line
+        !chars[self.cursor.min(chars.len())..].contains(&'\n')
+    }
+
+    /// Move cursor up one line within multiline text. Returns false if already on first line.
+    pub fn move_up(&mut self) -> bool {
+        let chars: Vec<char> = self.buffer.chars().collect();
+        let pos = self.cursor.min(chars.len());
+
+        // Find start of current line
+        let current_line_start = chars[..pos]
+            .iter()
+            .rposition(|&c| c == '\n')
+            .map_or(0, |i| i + 1);
+
+        if current_line_start == 0 {
+            return false; // already on first line
+        }
+
+        // Column within current line
+        let col = pos - current_line_start;
+
+        // Find start of previous line
+        let prev_line_start = if current_line_start >= 2 {
+            chars[..current_line_start - 1]
+                .iter()
+                .rposition(|&c| c == '\n')
+                .map_or(0, |i| i + 1)
+        } else {
+            0
+        };
+
+        // Previous line length
+        let prev_line_len = current_line_start - 1 - prev_line_start;
+
+        self.cursor = prev_line_start + col.min(prev_line_len);
+        true
+    }
+
+    /// Move cursor down one line within multiline text. Returns false if already on last line.
+    pub fn move_down(&mut self) -> bool {
+        let chars: Vec<char> = self.buffer.chars().collect();
+        let pos = self.cursor.min(chars.len());
+
+        // Find start of current line
+        let current_line_start = chars[..pos]
+            .iter()
+            .rposition(|&c| c == '\n')
+            .map_or(0, |i| i + 1);
+
+        // Column within current line
+        let col = pos - current_line_start;
+
+        // Find end of current line (next newline or end of buffer)
+        let current_line_end = chars[pos..]
+            .iter()
+            .position(|&c| c == '\n')
+            .map_or(chars.len(), |i| pos + i);
+
+        if current_line_end >= chars.len() {
+            return false; // already on last line
+        }
+
+        // Next line starts after the newline
+        let next_line_start = current_line_end + 1;
+
+        // Next line length
+        let next_line_end = chars[next_line_start..]
+            .iter()
+            .position(|&c| c == '\n')
+            .map_or(chars.len(), |i| next_line_start + i);
+        let next_line_len = next_line_end - next_line_start;
+
+        self.cursor = next_line_start + col.min(next_line_len);
+        true
+    }
+
     /// Byte offset for the current cursor position.
     fn byte_offset(&self) -> usize {
         self.char_to_byte(self.cursor)
@@ -592,18 +684,26 @@ pub fn handle_key(
             InputAction::None
         }
 
-        // History navigation
+        // Up/Down: navigate within multiline text, fall through to history at boundaries
         (_, KeyCode::Up) => {
-            if let Some(entry) = history.prev(&input.buffer) {
+            if input.is_multiline() && !input.cursor_on_first_line() {
+                input.clear_selection();
+                input.move_up();
+            } else if let Some(entry) = history.prev(&input.buffer) {
                 input.set(entry);
             }
             InputAction::None
         }
         (_, KeyCode::Down) => {
-            match history.newer() {
-                NextResult::Entry(entry) => input.set(entry),
-                NextResult::Draft(draft) => input.set(draft),
-                NextResult::NotBrowsing => {}
+            if input.is_multiline() && !input.cursor_on_last_line() {
+                input.clear_selection();
+                input.move_down();
+            } else {
+                match history.newer() {
+                    NextResult::Entry(entry) => input.set(entry),
+                    NextResult::Draft(draft) => input.set(draft),
+                    NextResult::NotBrowsing => {}
+                }
             }
             InputAction::None
         }
@@ -1043,5 +1143,82 @@ mod tests {
         let s = InputState::default();
         assert!(s.selected_text().is_none());
         assert!(s.selection_range().is_none());
+    }
+
+    // ── Multiline navigation tests ──────────────────────────────────────
+
+    #[test]
+    fn is_multiline_detects_newlines() {
+        let mut s = InputState::default();
+        s.set("single line");
+        assert!(!s.is_multiline());
+        s.set("line one\nline two");
+        assert!(s.is_multiline());
+    }
+
+    #[test]
+    fn cursor_on_first_line() {
+        let mut s = InputState::default();
+        s.set("line one\nline two");
+        s.cursor = 3; // middle of first line
+        assert!(s.cursor_on_first_line());
+        assert!(!s.cursor_on_last_line());
+    }
+
+    #[test]
+    fn cursor_on_last_line() {
+        let mut s = InputState::default();
+        s.set("line one\nline two");
+        s.cursor = 12; // middle of second line
+        assert!(!s.cursor_on_first_line());
+        assert!(s.cursor_on_last_line());
+    }
+
+    #[test]
+    fn move_up_within_multiline() {
+        let mut s = InputState::default();
+        s.set("abc\ndef\nghi");
+        s.cursor = 7; // 'e' in second line (col 3)
+        // Actually: a(0)b(1)c(2)\n(3)d(4)e(5)f(6)\n(7)g(8)h(9)i(10)
+        s.cursor = 5; // 'e' in second line (col 1)
+        assert!(s.move_up());
+        assert_eq!(s.cursor, 1); // 'b' in first line (col 1)
+    }
+
+    #[test]
+    fn move_up_from_first_line_returns_false() {
+        let mut s = InputState::default();
+        s.set("abc\ndef");
+        s.cursor = 1;
+        assert!(!s.move_up());
+        assert_eq!(s.cursor, 1); // unchanged
+    }
+
+    #[test]
+    fn move_down_within_multiline() {
+        let mut s = InputState::default();
+        s.set("abc\ndef\nghi");
+        s.cursor = 1; // 'b' in first line (col 1)
+        assert!(s.move_down());
+        assert_eq!(s.cursor, 5); // 'e' in second line (col 1)
+    }
+
+    #[test]
+    fn move_down_from_last_line_returns_false() {
+        let mut s = InputState::default();
+        s.set("abc\ndef");
+        s.cursor = 5; // second line
+        assert!(!s.move_down());
+        assert_eq!(s.cursor, 5); // unchanged
+    }
+
+    #[test]
+    fn move_down_clamps_to_shorter_line() {
+        let mut s = InputState::default();
+        s.set("abcdef\nhi");
+        s.cursor = 5; // col 5 in first line (6 chars)
+        assert!(s.move_down());
+        // second line "hi" is only 2 chars, clamp to col 2
+        assert_eq!(s.cursor, 9); // 'i' position: 7(start) + 2(len) = 9
     }
 }
