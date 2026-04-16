@@ -29,10 +29,21 @@ fn default_mode() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersonaConfig {
+    /// Theme slug (the roster to draw from).
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Character slug within the theme (direct lookup).
+    /// Takes precedence over legacy `role` for character resolution.
+    #[serde(default)]
+    pub character: String,
+    /// Legacy: role name used as character lookup key in pre-taxonomy themes.
+    /// Still works via get_character_by_legacy_role() for backwards compat.
     #[serde(default = "default_role")]
     pub role: String,
+    /// Professional identity / lens ("homicide detective", "systems architect").
+    #[serde(default)]
+    pub identity: String,
+    /// Immersion level: high, medium, low, none.
     #[serde(default = "default_immersion")]
     pub immersion: String,
 }
@@ -174,7 +185,9 @@ impl Default for PersonaConfig {
     fn default() -> Self {
         Self {
             theme: default_theme(),
+            character: String::new(),
             role: default_role(),
+            identity: String::new(),
             immersion: default_immersion(),
         }
     }

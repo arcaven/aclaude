@@ -158,12 +158,91 @@ pub fn get_character_by_legacy_role<'a>(theme: &'a ThemeFile, role: &str) -> Res
         })
 }
 
-/// Build system prompt text based on immersion level.
+use crate::config::PersonaConfig;
+
+/// Resolve a character from config, handling the precedence:
+/// 1. config.character (--persona flag, direct slug lookup)
+/// 2. config.role (legacy: lookup by backstory_role)
+/// 3. first character in the roster (fallback)
+pub fn resolve_character<'a>(
+    theme: &'a ThemeFile,
+    config: &PersonaConfig,
+) -> Result<&'a Character> {
+    // Direct character slug takes precedence
+    if !config.character.is_empty() {
+        return get_character(theme, &config.character);
+    }
+    // Legacy: role-based lookup
+    if !config.role.is_empty() {
+        return get_character_by_legacy_role(theme, &config.role);
+    }
+    // Fallback: first character alphabetically
+    let mut keys: Vec<_> = theme.characters.keys().collect();
+    keys.sort();
+    keys.first()
+        .and_then(|k| theme.characters.get(*k))
+        .ok_or_else(|| ForestageError::CharacterNotFound {
+            character: "(no characters in theme)".to_string(),
+            theme: theme.theme.name.clone(),
+        })
+}
+
+/// Build the full system prompt: persona + identity + role(s).
 ///
-/// The prompt orients the LLM on which character to embody. It does NOT
-/// include team role or identity — those are separate concerns injected
-/// by the caller (session.rs, bridge.rs).
+/// The persona section orients the LLM on which character to embody.
+/// Identity and role are layered on top as separate concerns.
 pub fn build_system_prompt(theme: &ThemeFile, character: &Character, immersion: &str) -> String {
+    build_full_prompt(theme, character, immersion, "", "")
+}
+
+/// Build system prompt with all five taxonomy layers.
+///
+/// - Persona (character + theme) — who they're PLAYING
+/// - Identity — who they ARE now (professional lens)
+/// - Role(s) — what they DO on this team
+pub fn build_full_prompt(
+    theme: &ThemeFile,
+    character: &Character,
+    immersion: &str,
+    identity: &str,
+    roles: &str,
+) -> String {
+    let mut parts = Vec::new();
+
+    // Persona layer
+    let persona_prompt = build_persona_prompt(theme, character, immersion);
+    if !persona_prompt.is_empty() {
+        parts.push(persona_prompt);
+    }
+
+    // Identity layer
+    if !identity.is_empty() {
+        parts.push(format!(
+            "In this context, you have become a {identity}. Bring that professional perspective to your work."
+        ));
+    }
+
+    // Role layer
+    if !roles.is_empty() {
+        let role_list: Vec<&str> = roles.split(',').map(str::trim).collect();
+        if role_list.len() == 1 {
+            parts.push(format!(
+                "Your current role on this team is: {}.",
+                role_list[0]
+            ));
+        } else {
+            parts.push(format!(
+                "Your current roles on this team are: {}.",
+                role_list.join(", ")
+            ));
+        }
+    }
+
+    parts.join("\n\n")
+}
+
+/// Build just the persona portion of the system prompt.
+fn build_persona_prompt(theme: &ThemeFile, character: &Character, immersion: &str) -> String {
     match immersion {
         "high" => {
             let source = &theme.theme.source;

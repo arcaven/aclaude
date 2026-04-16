@@ -106,7 +106,7 @@ pub async fn run_tui(config: &ForestageConfig) -> Result<()> {
 
     // Resolve portrait
     let theme = persona::load_theme(&config.persona.theme)?;
-    let character = persona::get_character_by_legacy_role(&theme, &config.persona.role)?;
+    let character = persona::resolve_character(&theme, &config.persona)?;
     let portrait_paths =
         portrait::resolve_portrait(&config.persona.theme, character, Some(&config.persona.role));
 

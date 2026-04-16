@@ -29,13 +29,21 @@ struct Cli {
     #[arg(short = 'm', long)]
     model: Option<String>,
 
-    /// Theme override
+    /// Theme override (the roster)
     #[arg(short = 't', long)]
     theme: Option<String>,
 
-    /// Role override
+    /// Persona: character slug from the theme roster (e.g. "naomi-nagata")
+    #[arg(long)]
+    persona: Option<String>,
+
+    /// Role override: job assignment(s), comma-separated (e.g. "reviewer,troubleshooter")
     #[arg(short = 'r', long)]
     role: Option<String>,
+
+    /// Identity: professional lens (e.g. "homicide detective", "systems architect")
+    #[arg(long)]
+    identity: Option<String>,
 
     /// Immersion level override
     #[arg(short = 'i', long)]
@@ -259,11 +267,6 @@ fn main() -> anyhow::Result<()> {
 
     // Build CLI overrides table
     let mut overrides = toml::Table::new();
-    if cli.model.is_some()
-        || cli.theme.is_some()
-        || cli.role.is_some()
-        || cli.immersion.is_some()
-        || cli.mode.is_some()
     {
         let mut session_overrides = toml::Table::new();
         if let Some(model) = &cli.model {
@@ -279,8 +282,20 @@ fn main() -> anyhow::Result<()> {
         if let Some(theme) = &cli.theme {
             persona_overrides.insert("theme".to_string(), toml::Value::String(theme.clone()));
         }
+        if let Some(persona) = &cli.persona {
+            persona_overrides.insert(
+                "character".to_string(),
+                toml::Value::String(persona.clone()),
+            );
+        }
         if let Some(role) = &cli.role {
             persona_overrides.insert("role".to_string(), toml::Value::String(role.clone()));
+        }
+        if let Some(identity) = &cli.identity {
+            persona_overrides.insert(
+                "identity".to_string(),
+                toml::Value::String(identity.clone()),
+            );
         }
         if let Some(immersion) = &cli.immersion {
             persona_overrides.insert(
@@ -408,7 +423,8 @@ fn main() -> anyhow::Result<()> {
                 }
 
                 let theme = persona::load_theme(&name)?;
-                let character_data = persona::get_character_by_legacy_role(&theme, &agent)?;
+                let character_data = persona::get_character(&theme, &agent)
+                    .or_else(|_| persona::get_character_by_legacy_role(&theme, &agent))?;
                 let portraits = portrait::resolve_portrait(&name, character_data, Some(&agent));
 
                 // Portrait before card (position: top)

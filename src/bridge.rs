@@ -48,8 +48,14 @@ impl Session {
 
         let system_prompt = {
             let theme = persona::load_theme(&config.persona.theme)?;
-            let agent = persona::get_character_by_legacy_role(&theme, &config.persona.role)?;
-            persona::build_system_prompt(&theme, agent, &config.persona.immersion)
+            let character = persona::resolve_character(&theme, &config.persona)?;
+            persona::build_full_prompt(
+                &theme,
+                character,
+                &config.persona.immersion,
+                &config.persona.identity,
+                &config.persona.role,
+            )
         };
 
         let mut cmd = Command::new(&claude_path);
