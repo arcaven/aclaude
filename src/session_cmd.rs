@@ -125,23 +125,20 @@ fn smart_connect(socket: &str, session_name: &str, is_new_session: bool) -> Resu
     // created AND there are no other sessions on this socket.
     let safe_for_pattern1 = is_new_session && existing_count == 0;
 
-    let opts = if safe_for_pattern1 {
+    // ConnectOptions is non_exhaustive in tmux-cmc, so functional update
+    // syntax is forbidden from outside the crate. Build from default and
+    // mutate the fields we care about.
+    let mut opts = ConnectOptions::default();
+    opts.socket_name = Some(socket.to_owned());
+    if safe_for_pattern1 {
         // Pattern 1: attach directly to the user's session (just created)
-        ConnectOptions {
-            socket_name: Some(socket.to_owned()),
-            control_session_name: Some(session_name.to_owned()),
-            control_session_command: None,
-            ..ConnectOptions::default()
-        }
+        opts.control_session_name = Some(session_name.to_owned());
+        opts.control_session_command = None;
     } else {
         // Pattern 2: shared control session — never disrupts attached clients
-        ConnectOptions {
-            socket_name: Some(socket.to_owned()),
-            control_session_name: Some(CTRL_SESSION.to_owned()),
-            control_session_command: Some("cat".into()),
-            ..ConnectOptions::default()
-        }
-    };
+        opts.control_session_name = Some(CTRL_SESSION.to_owned());
+        opts.control_session_command = Some("cat".into());
+    }
 
     Client::connect(&opts).context("failed to connect to tmux — is tmux installed?")
 }
@@ -194,13 +191,14 @@ pub fn run_session_start(
         // globals set by configure_session when the session was first created.
         let window_name = window_label(persona, role);
         let window_cmd = forestage_command(persona, role, None);
+        // NewWindowOptions is non_exhaustive — mutate after default.
+        let mut window_opts = NewWindowOptions::default();
+        window_opts.session = session_id;
+        window_opts.name = Some(window_name);
+        window_opts.detached = true;
+        window_opts.start_command = Some(window_cmd);
         let _win_id = client
-            .new_window(&NewWindowOptions {
-                session: session_id,
-                name: Some(window_name),
-                detached: true,
-                start_command: Some(window_cmd),
-            })
+            .new_window(&window_opts)
             .context("new-window failed")?;
 
         // Don't select-window here — it would disrupt anyone already
@@ -219,6 +217,12 @@ pub fn run_session_start(
         // Session doesn't exist — create it
         let existing_count = user_session_count(&socket);
 
+        // Detect the terminal's image protocol BEFORE creating the session
+        // so the initial pane can be launched with forestage as its first
+        // process (skipping a shell, and its echo of the command line).
+        let image_env = detect_image_protocol();
+        let start_command = forestage_command(persona, role, image_env.as_ref());
+
         if existing_count == 0 {
             // First session: create it, then attach control mode to it (Pattern 1)
             println!("Creating session '{session_name}'...");
@@ -235,6 +239,7 @@ pub fn run_session_start(
                     "200",
                     "-y",
                     "50",
+                    &start_command,
                 ])
                 .status()
                 .context("failed to create tmux session")?;
@@ -243,23 +248,22 @@ pub fn run_session_start(
             }
 
             let client = smart_connect(&socket, &session_name, false)?;
-            let image_env = configure_session(&client, config, &session_name, &socket)?;
-            launch_in_pane(&client, &session_name, persona, role, image_env.as_ref())?;
+            configure_session(&client, config, &session_name, &socket, image_env.as_ref())?;
             drop(client);
         } else {
             // Additional session: use shared _ctrl (Pattern 2)
             println!("Creating session '{session_name}'...");
 
             let client = smart_connect(&socket, &session_name, true)?;
+            // NewSessionOptions is non_exhaustive — mutate after default
+            let mut new_session_opts = NewSessionOptions::default();
+            new_session_opts.name = Some(session_name.clone());
+            new_session_opts.detached = true;
+            new_session_opts.start_command = Some(start_command);
             client
-                .new_session(&NewSessionOptions {
-                    name: Some(session_name.clone()),
-                    detached: true,
-                    ..Default::default()
-                })
+                .new_session(&new_session_opts)
                 .context("new-session failed")?;
-            let image_env = configure_session(&client, config, &session_name, &socket)?;
-            launch_in_pane(&client, &session_name, persona, role, image_env.as_ref())?;
+            configure_session(&client, config, &session_name, &socket, image_env.as_ref())?;
             drop(client);
         }
 
@@ -276,14 +280,19 @@ pub fn run_session_start(
     Ok(())
 }
 
-/// Configure statusline for a session. Returns detected image protocol
-/// so the caller can inject it into the first pane's environment.
+/// Configure statusline and supporting tmux options for a session.
+///
+/// `image_env`, if provided, is persisted in tmux's global environment so
+/// future panes in this session (new windows, splits) inherit the protocol.
+/// Detection itself happens before session creation — see
+/// [`detect_image_protocol`].
 fn configure_session(
     client: &Client,
     config: &ForestageConfig,
     session_name: &str,
     socket: &str,
-) -> Result<Option<ImageEnv>> {
+    image_env: Option<&ImageEnv>,
+) -> Result<()> {
     let session = query_session_id(client, session_name)?;
 
     client
@@ -321,14 +330,11 @@ fn configure_session(
         ])
         .output();
 
-    // Detect terminal image protocol ONCE from the real terminal (not from
-    // inside a tmux pane, where the picker query races with other panes).
-    // Store in tmux's global environment so future panes inherit it.
-    // Return the values so the first pane can get them via env prefix
-    // (its shell was spawned before set-environment ran).
-    let image_env = detect_and_set_image_protocol(socket);
+    if let Some(env) = image_env {
+        persist_image_protocol_in_tmux(socket, env);
+    }
 
-    Ok(image_env)
+    Ok(())
 }
 
 /// Detected image protocol and font size for env injection.
@@ -337,60 +343,65 @@ struct ImageEnv {
     font_size: String,
 }
 
-/// Detect the terminal's image protocol and font size, then store in tmux
-/// environment so future panes inherit it. Returns the detected values so
-/// the caller can inject them into the first pane's command (whose shell
-/// was spawned before set-environment ran).
-fn detect_and_set_image_protocol(socket: &str) -> Option<ImageEnv> {
+/// Query the current terminal for its image protocol and font size.
+///
+/// Must run OUTSIDE any tmux pane — the picker queries stdin directly and
+/// races with tmux's own passthrough if the current TTY is a pane. Returns
+/// `None` if the terminal doesn't support any image protocol (picker will
+/// have fallen back to halfblocks, which is included as a successful
+/// result).
+fn detect_image_protocol() -> Option<ImageEnv> {
     use ratatui_image::picker::Picker;
 
-    // Enable raw mode temporarily for the picker query
     let raw_ok = crossterm::terminal::enable_raw_mode().is_ok();
 
-    let result = if let Ok(picker) = Picker::from_query_stdio() {
-        let proto = match picker.protocol_type() {
+    let result = Picker::from_query_stdio().ok().map(|picker| {
+        let protocol = match picker.protocol_type() {
             ratatui_image::picker::ProtocolType::Kitty => "kitty",
             ratatui_image::picker::ProtocolType::Iterm2 => "iterm2",
             ratatui_image::picker::ProtocolType::Sixel => "sixel",
             ratatui_image::picker::ProtocolType::Halfblocks => "halfblocks",
-        };
+        }
+        .to_owned();
         let font = picker.font_size();
-        let font_str = format!("{}x{}", font.0, font.1);
-
-        let _ = Command::new("tmux")
-            .args([
-                "-L",
-                socket,
-                "set-environment",
-                "-g",
-                "FORESTAGE_IMAGE_PROTOCOL",
-                proto,
-            ])
-            .output();
-        let _ = Command::new("tmux")
-            .args([
-                "-L",
-                socket,
-                "set-environment",
-                "-g",
-                "FORESTAGE_IMAGE_FONT_SIZE",
-                &font_str,
-            ])
-            .output();
-
-        Some(ImageEnv {
-            protocol: proto.to_owned(),
-            font_size: font_str,
-        })
-    } else {
-        None
-    };
+        ImageEnv {
+            protocol,
+            font_size: format!("{}x{}", font.0, font.1),
+        }
+    });
 
     if raw_ok {
         let _ = crossterm::terminal::disable_raw_mode();
     }
 
     result
+}
+
+/// Store the detected image protocol in tmux's global environment so that
+/// panes created after session setup inherit it automatically. The session's
+/// initial pane is handled separately (env prefix on its start_command)
+/// because it spawns before this call.
+fn persist_image_protocol_in_tmux(socket: &str, env: &ImageEnv) {
+    let _ = Command::new("tmux")
+        .args([
+            "-L",
+            socket,
+            "set-environment",
+            "-g",
+            "FORESTAGE_IMAGE_PROTOCOL",
+            &env.protocol,
+        ])
+        .output();
+    let _ = Command::new("tmux")
+        .args([
+            "-L",
+            socket,
+            "set-environment",
+            "-g",
+            "FORESTAGE_IMAGE_FONT_SIZE",
+            &env.font_size,
+        ])
+        .output();
 }
 
 /// Build the forestage command string with optional persona/role overrides.
@@ -443,24 +454,6 @@ fn query_session_id(client: &Client, session_name: &str) -> Result<tmux_cmc::Ses
     let id_str = resp.first_line().unwrap_or("$0").trim().to_owned();
     tmux_cmc::SessionId::new(&id_str)
         .map_err(|_| anyhow::anyhow!("invalid session id from tmux: {id_str}"))
-}
-
-/// Launch forestage binary in the first pane of a session (for new sessions).
-///
-/// `image_env` injects the detected image protocol into the command so the
-/// first pane gets it even though its shell predates `set-environment -g`.
-fn launch_in_pane(
-    client: &Client,
-    session_name: &str,
-    persona: Option<&str>,
-    role: Option<&str>,
-    image_env: Option<&ImageEnv>,
-) -> Result<()> {
-    let cmd = forestage_command(persona, role, image_env);
-    client
-        .run_command(&format!("send-keys -t '{session_name}:0.0' '{cmd}' Enter"))
-        .context("send-keys failed")?;
-    Ok(())
 }
 
 /// Exec tmux attach (replaces current process on success).
