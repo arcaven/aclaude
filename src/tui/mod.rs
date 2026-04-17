@@ -337,18 +337,20 @@ pub async fn run_tui(config: &ForestageConfig) -> Result<()> {
                                 ));
                             }
 
-                            InputAction::PermissionAllow => {
+                            // Dynamic permission responses over stream-json
+                            // stdin are architecturally impossible — see
+                            // finding-021 (aae-orc _kos). send_permission_response
+                            // always returns an error explaining that. We
+                            // still clear the pending prompt so the UI doesn't
+                            // wedge; the user's recourse is to relaunch with
+                            // --dangerously-skip-permissions / --allowedTools.
+                            InputAction::PermissionAllow | InputAction::PermissionDeny => {
                                 state.pending_permission = None;
-                                state.set_status("Permission: allowed".to_string());
-                                if let Err(e) = session.send_permission_response(true).await {
-                                    state.set_status(format!("Send error: {e}"));
-                                }
-                            }
-                            InputAction::PermissionDeny => {
-                                state.pending_permission = None;
-                                state.set_status("Permission: denied".to_string());
-                                if let Err(e) = session.send_permission_response(false).await {
-                                    state.set_status(format!("Send error: {e}"));
+                                match session.send_permission_response(false).await {
+                                    Ok(()) => unreachable!(
+                                        "send_permission_response must return Err until HTTP hooks land"
+                                    ),
+                                    Err(e) => state.set_status(format!("{e}")),
                                 }
                             }
 

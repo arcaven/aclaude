@@ -179,35 +179,33 @@ impl Session {
             })
     }
 
-    /// Send a permission response (allow/deny) to the subprocess.
+    /// Dynamic permission responses via stream-json stdin are architecturally
+    /// impossible — Claude Code reads PermissionRequest decisions from
+    /// registered hooks in `.claude/settings.json` (command stdout or HTTP
+    /// response body), never from the main subprocess's stdin. See
+    /// finding-021-claude-permission-protocol.md (aae-orc _kos/findings/).
     ///
-    /// WARNING: This protocol format is unvalidated against Claude Code's
-    /// actual hook response protocol. The hook system may expect a different
-    /// JSON shape. If the format is wrong, Claude Code will hang waiting
-    /// for a valid response. Needs integration testing before relying on
-    /// permission prompt functionality.
-    pub async fn send_permission_response(&self, allowed: bool) -> Result<()> {
-        let behavior = if allowed { "allow" } else { "deny" };
-        let msg = serde_json::json!({
-            "type": "permission_response",
-            "permission_response": {
-                "behavior": behavior
-            }
-        });
-        let line = format!(
-            "{}\n",
-            serde_json::to_string(&msg).map_err(|e| {
-                ForestageError::Session {
-                    message: format!("failed to serialize permission response: {e}"),
-                }
-            })?
-        );
-        self.stdin_tx
-            .send(line)
-            .await
-            .map_err(|_| ForestageError::Session {
-                message: "subprocess stdin closed".to_string(),
-            })
+    /// For now this method returns an error that surfaces the architectural
+    /// truth. The TUI pressing `a`/`d` on a PermissionRequest can show this
+    /// message to the user.
+    ///
+    /// For pre-approval, spawn claude with one of:
+    ///   --dangerously-skip-permissions
+    ///   --allowedTools "Bash(git *) Edit"
+    ///   --permission-mode bypassPermissions|acceptEdits|auto|dontAsk|plan
+    ///
+    /// For true dynamic approval, forestage needs to register an HTTP hook
+    /// in `.claude/settings.json` and run a local HTTP server — tracked as
+    /// a separate bd issue.
+    pub async fn send_permission_response(&self, _allowed: bool) -> Result<()> {
+        Err(ForestageError::Session {
+            message: "forestage cannot respond to permission prompts over \
+                      stream-json stdin (not supported by Claude Code). \
+                      Relaunch with --dangerously-skip-permissions, \
+                      --allowedTools, or a --permission-mode that doesn't \
+                      prompt. HTTP-hook support is tracked as a follow-up."
+                .to_string(),
+        })
     }
 
     /// Interrupt the subprocess (ESC behavior — stop current generation).

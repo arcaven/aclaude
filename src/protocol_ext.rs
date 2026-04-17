@@ -311,8 +311,14 @@ impl BridgeParser {
     }
 
     fn parse_hook_event(&self, v: &serde_json::Value) -> Option<BridgeEvent> {
-        let subtype = v.get("subtype").and_then(|s| s.as_str())?;
-        if subtype != "PermissionRequest" {
+        // Per finding-021 (aae-orc _kos), Claude Code emits the field as
+        // `hook_event_name`, not `subtype`. Accept `subtype` too in case an
+        // older Claude Code version uses it — harmless fallback.
+        let event_name = v
+            .get("hook_event_name")
+            .or_else(|| v.get("subtype"))
+            .and_then(|s| s.as_str())?;
+        if event_name != "PermissionRequest" {
             return None;
         }
         let tool = v
@@ -496,6 +502,35 @@ mod tests {
                 assert_eq!(content, "result text");
             }
             other => panic!("expected ToolResult, got {other:?}"),
+        }
+    }
+
+    /// Per finding-021 (aae-orc _kos), the field is `hook_event_name` per
+    /// Claude Code's documented hook schema, not `subtype`. We accept both
+    /// for forward/backward compatibility. Regression for forestage#37 Part C.
+    #[test]
+    fn parse_permission_request_via_hook_event_name() {
+        let mut p = parser();
+        let line = r#"{"type":"hook_event","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls /etc"}}"#;
+        match p.parse(line) {
+            Some(BridgeEvent::PermissionRequest { tool, description }) => {
+                assert_eq!(tool, "Bash");
+                assert_eq!(description, "ls /etc");
+            }
+            other => panic!("expected PermissionRequest via hook_event_name, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_permission_request_via_legacy_subtype_fallback() {
+        let mut p = parser();
+        let line = r#"{"type":"hook_event","subtype":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls /etc"}}"#;
+        match p.parse(line) {
+            Some(BridgeEvent::PermissionRequest { tool, description }) => {
+                assert_eq!(tool, "Bash");
+                assert_eq!(description, "ls /etc");
+            }
+            other => panic!("expected PermissionRequest via subtype fallback, got {other:?}"),
         }
     }
 
