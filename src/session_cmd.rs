@@ -188,19 +188,20 @@ pub fn run_session_start(
         // Query session ID ($n) for the existing session
         let session_id = query_session_id(&client, &session_name)?;
 
-        // Create a new window in this session
+        // Create a new window in this session, launching forestage directly as
+        // the pane's initial process (no shell → no shell-echo of the command).
+        // Image env vars aren't needed here: new windows inherit the session's
+        // globals set by configure_session when the session was first created.
         let window_name = window_label(persona, role);
+        let window_cmd = forestage_command(persona, role, None);
         let _win_id = client
             .new_window(&NewWindowOptions {
                 session: session_id,
                 name: Some(window_name),
                 detached: true,
-                ..Default::default()
+                start_command: Some(window_cmd),
             })
             .context("new-window failed")?;
-
-        // Launch forestage in the new window's default pane
-        launch_in_last_window(&client, &session_name, persona, role)?;
 
         // Don't select-window here — it would disrupt anyone already
         // attached to this session (clears Kitty graphics, forces redraw).
@@ -459,25 +460,6 @@ fn launch_in_pane(
     client
         .run_command(&format!("send-keys -t '{session_name}:0.0' '{cmd}' Enter"))
         .context("send-keys failed")?;
-    Ok(())
-}
-
-/// Launch forestage in the last (most recently created) window of a session.
-///
-/// New windows inherit tmux's global environment (which has the protocol
-/// from the original `set-environment -g`), so no env injection needed.
-fn launch_in_last_window(
-    client: &Client,
-    session_name: &str,
-    persona: Option<&str>,
-    role: Option<&str>,
-) -> Result<()> {
-    // Target the last window's first pane: {session}:{$} is tmux's
-    // special token for the highest-numbered window index.
-    let cmd = forestage_command(persona, role, None);
-    client
-        .run_command(&format!("send-keys -t '{session_name}:$' '{cmd}' Enter"))
-        .context("send-keys to new window failed")?;
     Ok(())
 }
 

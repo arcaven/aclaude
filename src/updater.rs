@@ -555,6 +555,71 @@ mod tests {
         assert_eq!(release.assets[0].name, "forestage-a-darwin-arm64");
     }
 
+    /// Build a bare release record used only by find_release filter tests.
+    fn mk_release(tag: &str, published_at: &str, prerelease: bool) -> GitHubRelease {
+        GitHubRelease {
+            tag_name: tag.to_string(),
+            prerelease,
+            published_at: published_at.to_string(),
+            assets: Vec::new(),
+        }
+    }
+
+    /// Regression for forestage#19 — updater on the alpha channel must NOT
+    /// return the latest stable tag, even when stable is newer.
+    #[test]
+    fn find_release_alpha_ignores_newer_stable() {
+        let releases = vec![
+            mk_release(
+                "stable-20260405-075317-4b4ae8d",
+                "2026-04-05T07:53:17Z",
+                false,
+            ),
+            mk_release(
+                "alpha-20260405-075244-2a64b70",
+                "2026-04-05T07:52:44Z",
+                true,
+            ),
+            mk_release(
+                "alpha-20260404-120000-1111111",
+                "2026-04-04T12:00:00Z",
+                true,
+            ),
+        ];
+        let r = find_release(&releases, Channel::Alpha, None).expect("should find an alpha");
+        assert_eq!(r.tag_name, "alpha-20260405-075244-2a64b70");
+    }
+
+    #[test]
+    fn find_release_stable_ignores_alpha() {
+        let releases = vec![
+            mk_release(
+                "stable-20260405-075317-4b4ae8d",
+                "2026-04-05T07:53:17Z",
+                false,
+            ),
+            mk_release(
+                "alpha-20260406-010000-2222222",
+                "2026-04-06T01:00:00Z",
+                true,
+            ),
+        ];
+        let r = find_release(&releases, Channel::Stable, None).expect("should find a stable");
+        assert_eq!(r.tag_name, "stable-20260405-075317-4b4ae8d");
+    }
+
+    #[test]
+    fn find_release_alpha_errors_when_only_stable_exists() {
+        let releases = vec![mk_release(
+            "stable-20260405-075317-4b4ae8d",
+            "2026-04-05T07:53:17Z",
+            false,
+        )];
+        let err = find_release(&releases, Channel::Alpha, None).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("Alpha"), "unexpected error: {msg}");
+    }
+
     #[test]
     fn github_release_deserializes_without_assets() {
         let json = r#"{
