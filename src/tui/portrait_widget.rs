@@ -59,8 +59,24 @@ impl PortraitWidget {
     ///
     /// Must be called AFTER `crossterm::terminal::enable_raw_mode()` and
     /// BEFORE `Terminal::new()`.
+    ///
+    /// When running under marvel (detected via `MARVEL_SESSION` env
+    /// var), skip `Picker::from_query_stdio()`. The query writes a
+    /// terminal-capability escape sequence to stdout and synchronously
+    /// reads the response from stdin. Under marvel-managed tmux panes,
+    /// any bytes the control plane sends via `marvel inject` during
+    /// that window are consumed by this query — not delivered as key
+    /// events — producing a silent "first-keystrokes lost" race on
+    /// cold-start sessions. See aae-orc-9cp.
+    ///
+    /// Marvel-managed sessions still honour `FORESTAGE_IMAGE_PROTOCOL`
+    /// if the operator has manually selected a protocol.
     pub fn new() -> Option<Self> {
-        let picker = picker_from_env().or_else(|| Picker::from_query_stdio().ok())?;
+        let picker = if std::env::var_os("MARVEL_SESSION").is_some() {
+            picker_from_env()?
+        } else {
+            picker_from_env().or_else(|| Picker::from_query_stdio().ok())?
+        };
         Some(Self {
             picker,
             image_state: None,
