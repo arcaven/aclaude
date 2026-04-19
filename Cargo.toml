@@ -45,7 +45,7 @@ base64 = "0.22"
 
 # Async (bridge subprocess I/O)
 tokio = { version = "1", features = ["sync", "rt", "macros", "io-util", "process", "time"] }
-nucleo-matcher = "0.3.1"
+fuzzy-matcher = "0.3.7"
 
 [build-dependencies]
 chrono = "0.4"

@@ -26,23 +26,24 @@
 //!   given, search characters across every theme and back-propagate the
 //!   matched character's home theme.
 
+use std::cmp::Reverse;
 use std::io::Write;
 
-use nucleo_matcher::pattern::{AtomKind, CaseMatching, Normalization, Pattern};
-use nucleo_matcher::{Config, Matcher, Utf32Str};
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 
 use crate::error::{ForestageError, Result};
 use crate::persona::{self, ThemeFile};
 
-/// Minimum fuzzy score we'll accept. nucleo typically returns scores
-/// in the low hundreds for reasonable matches; anything under this is
-/// noise and rejected as NotFound.
-const MIN_FUZZY_SCORE: u16 = 60;
+/// Minimum fuzzy score we'll accept. `fuzzy-matcher` returns scores
+/// on the order of tens-to-low-hundreds for reasonable matches; below
+/// this we treat the result as noise.
+const MIN_FUZZY_SCORE: i64 = 40;
 
 /// Score gap between rank-1 and rank-2 that makes a fuzzy match
 /// unambiguous. Below this the caller still proceeds with rank-1 but
 /// emits a disambiguation warning on stderr.
-const FUZZY_AMBIGUITY_GAP: u16 = 20;
+const FUZZY_AMBIGUITY_GAP: i64 = 15;
 
 /// How many candidates we include in "did you mean?" output.
 const MAX_CANDIDATES_SHOWN: usize = 5;
@@ -105,32 +106,16 @@ pub fn match_slug(query: &str, candidates: &[String]) -> MatchResult<String> {
         return MatchResult::Prefix(prefix_hits[0].clone());
     }
 
-    // 3. Fuzzy subsequence via nucleo-matcher.
-    let mut matcher = Matcher::new(Config::DEFAULT);
-    let pattern = Pattern::new(
-        query,
-        CaseMatching::Ignore,
-        Normalization::Smart,
-        AtomKind::Fuzzy,
-    );
-
-    let mut buf = Vec::new();
-    let mut scored: Vec<(String, u16)> = candidates
+    // 3. Fuzzy subsequence via fuzzy-matcher (skim's matcher — MIT).
+    let matcher = SkimMatcherV2::default().ignore_case();
+    let mut scored: Vec<(String, i64)> = candidates
         .iter()
-        .filter_map(|c| {
-            let haystack = Utf32Str::new(c, &mut buf);
-            pattern.score(haystack, &mut matcher).map(|s| {
-                // nucleo scores are u32 internally; cap at u16::MAX for our threshold arithmetic.
-                let clipped = u16::try_from(s).unwrap_or(u16::MAX);
-                (c.clone(), clipped)
-            })
-        })
+        .filter_map(|c| matcher.fuzzy_match(c, query).map(|s| (c.clone(), s)))
         .collect();
-
-    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.sort_by_key(|(_, s)| Reverse(*s));
 
     // Filter to candidates above the minimum score.
-    let qualifying: Vec<&(String, u16)> = scored
+    let qualifying: Vec<&(String, i64)> = scored
         .iter()
         .filter(|(_, s)| *s >= MIN_FUZZY_SCORE)
         .collect();
