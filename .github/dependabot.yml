@@ -4,8 +4,14 @@ updates:
     directory: /
     schedule:
       interval: daily
+    labels:
+      - "type.deps"
+      - "agent.bot"
 
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: daily
+    labels:
+      - "type.deps"
+      - "agent.bot"
