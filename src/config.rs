@@ -32,12 +32,13 @@ pub struct PersonaConfig {
     /// Theme slug (the roster to draw from).
     #[serde(default = "default_theme")]
     pub theme: String,
-    /// Character slug within the theme (direct lookup).
-    /// Takes precedence over legacy `role` for character resolution.
+    /// Character slug within the theme (the --persona flag / "costume").
+    /// This is the sole character selector under the B14 agent taxonomy.
     #[serde(default)]
     pub character: String,
-    /// Legacy: role name used as character lookup key in pre-taxonomy themes.
-    /// Still works via get_character_by_legacy_role() for backwards compat.
+    /// Job assignment(s) on this team — free-form, CSV supported
+    /// (e.g. "reviewer,troubleshooter"). Passed to `build_full_prompt`
+    /// as role-layer context. Not a character lookup key.
     #[serde(default = "default_role")]
     pub role: String,
     /// Professional identity / lens ("homicide detective", "systems architect").

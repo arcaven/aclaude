@@ -240,14 +240,15 @@ enum PersonaAction {
     /// List available themes
     List,
 
-    /// Show theme details
+    /// Show theme details (or a single character card with --agent)
     Show {
         /// Theme slug
         name: String,
 
-        /// Show specific agent role
-        #[arg(long, default_value = "dev")]
-        agent: String,
+        /// Character slug — show card for this character. Omit to list
+        /// the full roster.
+        #[arg(long)]
+        agent: Option<String>,
 
         /// Display portrait inline (Kitty/Ghostty terminals)
         #[arg(short = 'p', long)]
@@ -268,6 +269,17 @@ enum PersonaAction {
 
     /// Show portrait cache status
     Portraits,
+}
+
+/// Trim a string to a single line and cap its length for table-style output.
+fn truncate_one_line(s: &str, max: usize) -> String {
+    let one_line = s.lines().next().unwrap_or("").trim();
+    if one_line.chars().count() <= max {
+        return one_line.to_string();
+    }
+    let mut out: String = one_line.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
 }
 
 fn main() -> anyhow::Result<()> {
@@ -430,16 +442,42 @@ fn main() -> anyhow::Result<()> {
                 portrait_size,
             } => {
                 let cfg = config::load_config(cli_overrides)?;
+                let theme = persona::load_theme(&name)?;
+
+                let Some(agent_slug) = agent else {
+                    // No character selected — print roster summary.
+                    println!("Theme: {} ({})", theme.theme.name, theme.category);
+                    println!("Description: {}", theme.theme.description);
+                    if !theme.theme.source.is_empty() {
+                        println!("Source: {}", theme.theme.source);
+                    }
+                    if let Some(title) = &theme.theme.user_title {
+                        println!("User title: {title}");
+                    }
+                    let mut chars: Vec<_> = theme.characters.iter().collect();
+                    chars.sort_by_key(|(k, _)| k.as_str());
+                    println!();
+                    println!("Characters ({}):", chars.len());
+                    for (slug, c) in chars {
+                        println!(
+                            "  {:<40} {} — {}",
+                            slug,
+                            c.character,
+                            truncate_one_line(&c.style, 60)
+                        );
+                    }
+                    println!();
+                    println!("Use 'forestage persona show {name} --agent <slug>' for details.");
+                    return Ok(());
+                };
 
                 // Auto-download portraits if showing and not cached
                 if show_portrait {
                     let _ = download::ensure_portraits(&name, &cfg.portrait);
                 }
 
-                let theme = persona::load_theme(&name)?;
-                let character_data = persona::get_character(&theme, &agent)
-                    .or_else(|_| persona::get_character_by_legacy_role(&theme, &agent))?;
-                let portraits = portrait::resolve_portrait(&name, character_data, Some(&agent));
+                let character_data = persona::get_character(&theme, &agent_slug)?;
+                let portraits = portrait::resolve_portrait(&name, character_data);
 
                 // Portrait before card (position: top)
                 if show_portrait && portrait_position == "top" {
@@ -457,17 +495,8 @@ fn main() -> anyhow::Result<()> {
                 if let Some(title) = &theme.theme.user_title {
                     println!("User title: {title}");
                 }
-                println!("Characters: {}", {
-                    let mut chars: Vec<_> = theme.characters.keys().collect();
-                    chars.sort();
-                    chars
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                });
                 println!();
-                println!("Agent: {} (role: {agent})", character_data.character);
+                println!("Character: {} ({agent_slug})", character_data.character);
                 println!("  Style: {}", character_data.style);
                 println!("  Expertise: {}", character_data.expertise);
                 println!("  Trait: {}", character_data.r#trait);
