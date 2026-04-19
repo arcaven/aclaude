@@ -1,8 +1,6 @@
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
 
 use crate::config::PortraitConfig;
 use crate::persona::Character;
@@ -59,20 +57,6 @@ pub fn portrait_cache_dir() -> PathBuf {
     data_dir.join("forestage/portraits")
 }
 
-/// Cached manifest: theme-slug -> { role -> filename-stem }.
-static MANIFEST: OnceLock<HashMap<String, HashMap<String, String>>> = OnceLock::new();
-
-fn load_manifest() -> &'static HashMap<String, HashMap<String, String>> {
-    MANIFEST.get_or_init(|| {
-        let path = portrait_cache_dir().join("manifest.json");
-        let content = match fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => return HashMap::new(),
-        };
-        serde_json::from_str(&content).unwrap_or_default()
-    })
-}
-
 /// Normalize a name for portrait filename matching.
 fn normalize_stem(name: &str) -> String {
     name.to_lowercase()
@@ -84,16 +68,22 @@ fn normalize_stem(name: &str) -> String {
         .collect()
 }
 
-/// Resolve portrait paths for a given theme/agent/role.
+/// Resolve portrait paths for a given theme + character.
 ///
-/// Resolution order:
-/// 1. Manifest entry (authoritative)
-/// 2. shortName (normalized)
-/// 3. Full character name (normalized)
-/// 4. First name only
+/// Derived-stem lookup order:
+/// 1. shortName (normalized)
+/// 2. Full character name (normalized)
+/// 3. First name only
 ///
-/// For each candidate stem, tries exact match then prefix match in each size directory.
-pub fn resolve_portrait(theme_slug: &str, agent: &Character, role: Option<&str>) -> PortraitPaths {
+/// For each candidate stem, tries exact match then prefix match in each
+/// size directory (small/medium/large/original).
+///
+/// The legacy `manifest.json` role-keyed override was removed in the
+/// B14 agent taxonomy cleanup: role is a job assignment, not a persona
+/// selector, so the manifest's role-key override served the wrong
+/// portrait whenever --persona and --role referred to different
+/// characters (the granny→ponder class of bug).
+pub fn resolve_portrait(theme_slug: &str, agent: &Character) -> PortraitPaths {
     let cache_dir = portrait_cache_dir();
     let theme_dir = cache_dir.join(theme_slug);
 
@@ -108,41 +98,29 @@ pub fn resolve_portrait(theme_slug: &str, agent: &Character, role: Option<&str>)
         return paths;
     }
 
-    // Build candidate stems
-    let manifest = load_manifest();
+    // Build candidate stems from character fields.
     let mut stems: Vec<String> = Vec::new();
-
-    // 1. Manifest (authoritative)
-    if let Some(role_key) = role {
-        if let Some(stem) = manifest.get(theme_slug).and_then(|m| m.get(role_key)) {
-            stems.push(stem.clone());
+    if let Some(short) = &agent.short_name {
+        let s = normalize_stem(short);
+        if !s.is_empty() {
+            stems.push(s);
         }
     }
-
-    // 2-4. Derived stems (fallback)
-    if stems.is_empty() {
-        if let Some(short) = &agent.short_name {
-            let s = normalize_stem(short);
-            if !s.is_empty() {
-                stems.push(s);
-            }
-        }
-        let char_stem = normalize_stem(&agent.character);
-        if !char_stem.is_empty() && !stems.contains(&char_stem) {
-            stems.push(char_stem);
-        }
-        let first_name = agent
-            .character
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .to_lowercase()
-            .chars()
-            .filter(|c| c.is_alphanumeric())
-            .collect::<String>();
-        if !first_name.is_empty() && !stems.contains(&first_name) {
-            stems.push(first_name);
-        }
+    let char_stem = normalize_stem(&agent.character);
+    if !char_stem.is_empty() && !stems.contains(&char_stem) {
+        stems.push(char_stem);
+    }
+    let first_name = agent
+        .character
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect::<String>();
+    if !first_name.is_empty() && !stems.contains(&first_name) {
+        stems.push(first_name);
     }
 
     // Search each size directory
@@ -316,4 +294,51 @@ pub fn cache_status() -> (usize, usize) {
     }
 
     (themes, images)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_stem_lowercases_and_slugifies() {
+        assert_eq!(normalize_stem("Granny Weatherwax"), "granny-weatherwax");
+        assert_eq!(normalize_stem("DEATH"), "death");
+        assert_eq!(normalize_stem("Lu-Tze"), "lu-tze");
+        assert_eq!(
+            normalize_stem("Lord Havelock Vetinari"),
+            "lord-havelock-vetinari"
+        );
+    }
+
+    #[test]
+    fn normalize_stem_strips_punctuation() {
+        assert_eq!(
+            normalize_stem("Dr. Leonard \"Bones\" McCoy"),
+            "dr-leonard-bones-mccoy"
+        );
+        assert_eq!(normalize_stem("B.A. Baracus"), "ba-baracus");
+    }
+
+    #[test]
+    fn resolve_portrait_no_cache_returns_empty() {
+        // Nonexistent theme dir — no ambient state required.
+        let character = Character {
+            character: "Granny Weatherwax".into(),
+            short_name: Some("Granny".into()),
+            visual: None,
+            ocean: None,
+            style: String::new(),
+            expertise: String::new(),
+            r#trait: String::new(),
+            backstory_role: String::new(),
+            backstory_role_description: String::new(),
+            quirks: Vec::new(),
+            catchphrases: Vec::new(),
+            emoji: None,
+            helper: None,
+        };
+        let paths = resolve_portrait("__nonexistent_theme_fixture__", &character);
+        assert!(!paths.has_any());
+    }
 }

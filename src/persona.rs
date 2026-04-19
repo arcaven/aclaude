@@ -145,38 +145,25 @@ pub fn get_character<'a>(theme: &'a ThemeFile, slug: &str) -> Result<&'a Charact
         })
 }
 
-/// Backwards-compatible alias — get a character by the old role key.
-/// Searches backstory_role fields for a match. Used during migration.
-pub fn get_character_by_legacy_role<'a>(theme: &'a ThemeFile, role: &str) -> Result<&'a Character> {
-    theme
-        .characters
-        .values()
-        .find(|c| c.backstory_role == role)
-        .ok_or_else(|| ForestageError::CharacterNotFound {
-            character: format!("(legacy role: {role})"),
-            theme: theme.theme.name.clone(),
-        })
-}
-
 use crate::config::PersonaConfig;
 
-/// Resolve a character from config, handling the precedence:
-/// 1. config.character (--persona flag, direct slug lookup)
-/// 2. config.role (legacy: lookup by backstory_role)
-/// 3. first character in the roster (fallback)
+/// Resolve a character from config.
+///
+/// Under the B14 agent taxonomy, persona selection is by character slug.
+/// `config.role` is a job-assignment string (passed to `build_full_prompt`),
+/// not a character lookup key.
+///
+/// Precedence:
+/// 1. `config.character` (--persona flag, direct slug lookup)
+/// 2. First character in the roster, alphabetical (fallback when no
+///    character is specified)
 pub fn resolve_character<'a>(
     theme: &'a ThemeFile,
     config: &PersonaConfig,
 ) -> Result<&'a Character> {
-    // Direct character slug takes precedence
     if !config.character.is_empty() {
         return get_character(theme, &config.character);
     }
-    // Legacy: role-based lookup
-    if !config.role.is_empty() {
-        return get_character_by_legacy_role(theme, &config.role);
-    }
-    // Fallback: first character alphabetically
     let mut keys: Vec<_> = theme.characters.keys().collect();
     keys.sort();
     keys.first()

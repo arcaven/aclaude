@@ -107,8 +107,7 @@ pub async fn run_tui(config: &ForestageConfig) -> Result<()> {
     // Resolve portrait
     let theme = persona::load_theme(&config.persona.theme)?;
     let character = persona::resolve_character(&theme, &config.persona)?;
-    let portrait_paths =
-        portrait::resolve_portrait(&config.persona.theme, character, Some(&config.persona.role));
+    let portrait_paths = portrait::resolve_portrait(&config.persona.theme, character);
 
     // Terminal setup: raw mode FIRST, then picker query, then terminal
     enable_raw_mode().map_err(|e| crate::error::ForestageError::Session {
