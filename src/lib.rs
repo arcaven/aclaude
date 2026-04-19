@@ -8,6 +8,7 @@ pub mod petname;
 pub mod portrait;
 pub mod protocol;
 pub mod protocol_ext;
+pub mod resolve;
 pub mod session;
 pub mod session_cmd;
 pub mod statusline;

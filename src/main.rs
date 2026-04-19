@@ -5,6 +5,7 @@ use forestage::config;
 use forestage::download;
 use forestage::persona;
 use forestage::portrait;
+use forestage::resolve;
 use forestage::session;
 use forestage::session_cmd;
 use forestage::tui;
@@ -237,8 +238,12 @@ enum SessionAction {
 
 #[derive(Subcommand)]
 enum PersonaAction {
-    /// List available themes
-    List,
+    /// List themes, or characters within a theme
+    List {
+        /// Theme slug (or fuzzy fragment) — list this theme's characters.
+        /// Omit to list all themes.
+        theme: Option<String>,
+    },
 
     /// Show theme details (or a single character card with --agent)
     Show {
@@ -285,6 +290,12 @@ fn truncate_one_line(s: &str, max: usize) -> String {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    // Fuzzy-resolve --theme and --persona before they reach the config
+    // merge. Two-phase: theme narrows persona; persona back-propagates
+    // theme when theme can't be resolved. Warnings on stderr.
+    let (resolved_theme, resolved_persona) =
+        resolve::resolve_theme_and_persona(cli.theme.as_deref(), cli.persona.as_deref())?;
+
     // Build CLI overrides table
     let mut overrides = toml::Table::new();
     {
@@ -299,10 +310,10 @@ fn main() -> anyhow::Result<()> {
             overrides.insert("session".to_string(), toml::Value::Table(session_overrides));
         }
         let mut persona_overrides = toml::Table::new();
-        if let Some(theme) = &cli.theme {
+        if let Some(theme) = &resolved_theme {
             persona_overrides.insert("theme".to_string(), toml::Value::String(theme.clone()));
         }
-        if let Some(persona) = &cli.persona {
+        if let Some(persona) = &resolved_persona {
             persona_overrides.insert(
                 "character".to_string(),
                 toml::Value::String(persona.clone()),
@@ -422,14 +433,43 @@ fn main() -> anyhow::Result<()> {
         }
 
         Some(Commands::Persona { action }) => match action {
-            PersonaAction::List => {
-                let themes = persona::list_themes();
-                println!("{} themes available:", themes.len());
-                for slug in &themes {
-                    if let Ok(theme) = persona::load_theme(slug) {
-                        println!("  {:<30} {}", slug, theme.theme.description);
-                    } else {
-                        println!("  {slug}");
+            PersonaAction::List { theme: theme_arg } => {
+                if let Some(q) = theme_arg {
+                    // List characters in a specific theme (fuzzy-resolve the theme slug).
+                    let theme_slug = match resolve::match_theme(&q).picked() {
+                        Some(s) => s,
+                        None => {
+                            eprintln!("forestage: theme '{q}' not found");
+                            std::process::exit(2);
+                        }
+                    };
+                    let theme = persona::load_theme(&theme_slug)?;
+                    let mut chars: Vec<_> = theme.characters.iter().collect();
+                    chars.sort_by_key(|(k, _)| k.as_str());
+                    println!(
+                        "{} ({}) — {} characters:",
+                        theme.theme.name,
+                        theme_slug,
+                        chars.len()
+                    );
+                    for (slug, c) in chars {
+                        println!(
+                            "  {:<40} {} — {}",
+                            slug,
+                            c.character,
+                            truncate_one_line(&c.style, 60)
+                        );
+                    }
+                } else {
+                    // List all themes.
+                    let themes = persona::list_themes();
+                    println!("{} themes available:", themes.len());
+                    for slug in &themes {
+                        if let Ok(theme) = persona::load_theme(slug) {
+                            println!("  {:<30} {}", slug, theme.theme.description);
+                        } else {
+                            println!("  {slug}");
+                        }
                     }
                 }
             }
@@ -442,6 +482,10 @@ fn main() -> anyhow::Result<()> {
                 portrait_size,
             } => {
                 let cfg = config::load_config(cli_overrides)?;
+                // Fuzzy-resolve the theme slug so 'persona show disc' works.
+                let name = resolve::match_theme(&name).picked().ok_or_else(|| {
+                    anyhow::anyhow!("theme '{name}' not found — try 'forestage persona list'")
+                })?;
                 let theme = persona::load_theme(&name)?;
 
                 let Some(agent_slug) = agent else {
@@ -476,6 +520,14 @@ fn main() -> anyhow::Result<()> {
                     let _ = download::ensure_portraits(&name, &cfg.portrait);
                 }
 
+                // Fuzzy-resolve the character slug within the theme roster.
+                let agent_slug = resolve::match_character_in_theme(&agent_slug, &theme)
+                    .picked()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "character '{agent_slug}' not found in theme '{name}' — try 'forestage persona list {name}'"
+                        )
+                    })?;
                 let character_data = persona::get_character(&theme, &agent_slug)?;
                 let portraits = portrait::resolve_portrait(&name, character_data);
 
