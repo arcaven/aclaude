@@ -104,7 +104,7 @@ characters:
       style: "Mysterious testing advisor"
 
   kara-starbuck-thrace:
-    character: "Kara "Starbuck" Thrace"
+    character: 'Kara "Starbuck" Thrace'
     shortName: "Starbuck"
     visual: "A woman with short blonde hair and intense eyes, wearing flight suit with captain's insignia, cigar often in hand, athletic build with swagger"
     ocean:
@@ -188,7 +188,7 @@ characters:
       style: "Cylon consensus architecture"
 
   lee-apollo-adama:
-    character: "Lee "Apollo" Adama"
+    character: 'Lee "Apollo" Adama'
     shortName: "Apollo"
     visual: "A young man with dark hair and strong jaw, wearing pilot's flight suit or dress uniform, athletic build, weight of expectation in his eyes"
     ocean:

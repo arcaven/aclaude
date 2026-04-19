@@ -295,3 +295,49 @@ fn build_persona_prompt(theme: &ThemeFile, character: &Character, immersion: &st
         _ => String::new(), // "none" or unknown
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_embedded_theme_parses() {
+        let slugs = list_themes();
+        assert!(!slugs.is_empty(), "expected at least one embedded theme");
+        let mut failures = Vec::new();
+        for slug in &slugs {
+            if let Err(e) = load_theme(slug) {
+                failures.push(format!("{slug}: {e}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "{} theme(s) failed to parse:\n  {}",
+            failures.len(),
+            failures.join("\n  "),
+        );
+    }
+
+    #[test]
+    fn every_theme_has_description_and_source() {
+        let mut empty_desc = Vec::new();
+        let mut empty_source = Vec::new();
+        for slug in list_themes() {
+            let theme = load_theme(&slug).expect("theme parse");
+            if theme.theme.description.trim().is_empty() {
+                empty_desc.push(slug.clone());
+            }
+            if theme.theme.source.trim().is_empty() {
+                empty_source.push(slug);
+            }
+        }
+        assert!(
+            empty_desc.is_empty(),
+            "themes with empty description: {empty_desc:?}"
+        );
+        assert!(
+            empty_source.is_empty(),
+            "themes with empty source/citation: {empty_source:?}"
+        );
+    }
+}

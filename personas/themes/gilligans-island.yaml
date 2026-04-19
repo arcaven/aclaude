@@ -301,7 +301,7 @@ characters:
       style: "Glamorous product intuition from years of knowing what audiences want"
 
   eunice-lovey-howell:
-    character: "Eunice "Lovey" Howell"
+    character: 'Eunice "Lovey" Howell'
     shortName: "Lovey"
     visual: "Elegant older socialite, pearl necklace, fancy hat with flowers, refined gentle smile, gloved hands"
     ocean:

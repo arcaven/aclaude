@@ -120,7 +120,7 @@ characters:
     backstory_role: dev
     quirks:
       - "\"Hmm\" means many things"
-      - {'Two swords': 'silver for monsters, steel for humans'}
+      - "Two swords: silver for monsters, steel for humans"
       - Neutral until neutrality is impossible
     catchphrases:
       - Hmm.

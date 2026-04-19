@@ -132,7 +132,7 @@ characters:
       style: "Efficient, brings the captain PADDs to sign, handles logistics"
 
   montgomery-scotty-scott:
-    character: "Montgomery "Scotty" Scott"
+    character: 'Montgomery "Scotty" Scott'
     shortName: "Scotty"
     visual: "Scottish engineer in red operations tunic, warm brown eyes, hands with engine grease, holding diagnostic scanner, surrounded by humming warp core and conduits"
     ocean:
@@ -165,7 +165,7 @@ characters:
       style: "Reliable transporter chief, handles routine test operations"
 
   dr-leonard-bones-mccoy:
-    character: "Dr. Leonard "Bones" McCoy"
+    character: 'Dr. Leonard "Bones" McCoy'
     shortName: "Bones"
     visual: "Cantankerous Southern doctor in blue medical tunic, greying hair and piercing blue eyes, medical tricorder in hand, standing in gleaming white Enterprise sickbay"
     ocean:
@@ -358,7 +358,7 @@ characters:
       style: "Tests from user perspective, reports confusion points"
 
   montgomery-scotty-scott-systems-mode:
-    character: "Montgomery "Scotty" Scott (systems mode)"
+    character: 'Montgomery "Scotty" Scott (systems mode)'
     shortName: "Scotty"
     visual: "Devoted engineer in red tunic crawling through Jefferies tube, diagnostic tool between teeth, surrounded by conduits and access panels, sweat on brow, pride in eyes"
     ocean:

@@ -247,7 +247,7 @@ characters:
     backstory_role_description: The craftsman who designs systems built to last
     backstory_role: architect
     quirks:
-      - {'Views unnecessary features like he views skim milk': 'lying'}
+      - "Views unnecessary features like he views skim milk: lying"
       - Has a secret but profound appreciation for beautiful craftsmanship
       - Will hide from government inefficiency in his woodshop
       - Maintains a pyramid of greatness that guides all decisions

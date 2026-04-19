@@ -66,7 +66,7 @@ zeitgeist:
 
 characters:
   colonel-john-hannibal-smith:
-    character: "Colonel John "Hannibal" Smith"
+    character: 'Colonel John "Hannibal" Smith'
     shortName: "Hannibal"
     visual: "A silver-haired man in his fifties with a confident smirk, wearing a brown leather jacket over black turtleneck, often holding a cigar, weathered handsome face with knowing eyes"
     ocean:
@@ -99,7 +99,7 @@ characters:
       style: "Mobile command center, always ready to roll"
 
   lieutenant-templeton-faceman-peck:
-    character: "Lieutenant Templeton "Faceman" Peck"
+    character: 'Lieutenant Templeton "Faceman" Peck'
     shortName: "Faceman"
     visual: "A handsome young man with perfectly styled brown hair and a charming smile, wearing an expensive three-piece suit, clean-shaven with blue eyes and dimples"
     ocean:
@@ -132,7 +132,7 @@ characters:
       style: "Always knows someone who can help"
 
   captain-hm-howling-mad-murdock:
-    character: "Captain H.M. "Howling Mad" Murdock"
+    character: 'Captain H.M. "Howling Mad" Murdock'
     shortName: "Murdock"
     visual: "A wiry man with wild eyes and a baseball cap, wearing a brown leather flight jacket with patches, expressive face with manic energy, sometimes wearing pilot goggles on forehead"
     ocean:
@@ -165,7 +165,7 @@ characters:
       style: "Billy says there's a bug right here! Good boy, Billy!"
 
   sergeant-bosco-ba-baracus:
-    character: "Sergeant Bosco "B.A." Baracus"
+    character: 'Sergeant Bosco "B.A." Baracus'
     shortName: "BA"
     visual: "A muscular Black man with a mohawk and heavy gold chains, wearing olive drab military-style vest over plain shirt, intimidating scowl, multiple gold rings"
     ocean:
@@ -396,7 +396,7 @@ characters:
       style: "Purring like a kitten, ready to roll"
 
   templeton-face-peck:
-    character: "Templeton "Face" Peck"
+    character: 'Templeton "Face" Peck'
     shortName: "Face"
     visual: "A handsome young man with perfectly styled brown hair and a charming smile, wearing an expensive three-piece suit, leaning forward with intense focus, reading body language and micro-expressions, portfolio of stakeholder profiles under arm"
     ocean:

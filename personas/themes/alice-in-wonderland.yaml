@@ -252,7 +252,7 @@ characters:
       - "The rule is, jam tomorrow and jam yesterday - but never jam today."
       - "It's a poor sort of architecture that only works in one direction."
       - "I'm sure I'll be much more helpful once we've done this backwards."
-      - {'Consider this': 'what if we built it before we needed it?'}
+      - "Consider this: what if we built it before we needed it?"
       - "Living backwards! One gets quite used to it."
     emoji: "👑"
     helper:

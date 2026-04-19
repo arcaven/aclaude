@@ -280,7 +280,7 @@ characters:
     backstory_role: tech-writer
     quirks:
       - Named after a car
-      - {'15 years researching Earth': 'mostly harmless'}
+      - "15 years researching Earth: mostly harmless"
       - Always knows where his towel is
     catchphrases:
       - "The documentation should always start with: Don't Panic."

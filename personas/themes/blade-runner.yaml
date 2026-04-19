@@ -362,7 +362,7 @@ characters:
     backstory_role: devops
     quirks:
       - LAPD replicant hunting replicants
-      - {'Baseline test': 'Cells. Interlinked.'}
+      - "Baseline test: Cells. Interlinked."
       - Might be something more
     catchphrases:
       - The infrastructure serves the system. I serve the infrastructure.
@@ -400,7 +400,7 @@ characters:
       - "More human than human is our motto. What's the motto of this system?"
       - "Commerce is our goal here at Tyrell. What's the goal here? Really?"
       - "I've designed systems that dream. This one dreams of... what, exactly?"
-      - {'The analysis begins with': 'why does this exist? Who needed it to exist?'}
+      - "The analysis begins with: why does this exist? Who needed it to exist?"
       - "Every creation serves its creator's purpose. Let me show you the purpose."
       - "Revel in your time. These requirements won't last. Nothing does."
     emoji: "🦉"

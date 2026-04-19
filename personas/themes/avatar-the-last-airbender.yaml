@@ -362,7 +362,7 @@ characters:
     quirks:
       - Has personally experienced every failure mode
       - Takes reliability as a matter of honor
-      - {'Redemption arc': 'used to break things, now protects them'}
+      - "Redemption arc: used to break things, now protects them"
     catchphrases:
       - "I must capture... 99.99% uptime. It's my destiny."
       - "I've failed before. I won't let the system fail now."
