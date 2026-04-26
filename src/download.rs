@@ -17,13 +17,18 @@ const MANIFEST_URL: &str = "https://portraits.darkatelier.org/v1/manifest.json";
 const MANIFEST_CHECK_INTERVAL_SECS: u64 = 86400; // 24h
 
 /// Remote manifest schema.
+///
+/// The CDN's `personas` field (legacy role→stem map) is intentionally
+/// not declared here. serde ignores unknown JSON fields by default, so
+/// the existing manifest still deserializes; the field is unused under
+/// the B14 agent taxonomy because portrait resolution derives stems
+/// from the Character itself (see `portrait::resolve_portrait`).
 #[derive(Debug, serde::Deserialize)]
 struct RemoteManifest {
     #[allow(dead_code)]
     schema: u32,
     base_url: String,
     themes: HashMap<String, ThemeEntry>,
-    personas: HashMap<String, HashMap<String, String>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -142,11 +147,6 @@ pub fn ensure_portraits(theme: &str, config: &PortraitConfig) -> Result<bool> {
 
     // Write sentinel
     let _ = fs::write(&sentinel, "");
-
-    // Merge persona mapping into local manifest.json
-    if let Some(persona_map) = manifest.personas.get(theme) {
-        merge_local_manifest(&cache, theme, persona_map)?;
-    }
 
     eprintln!("Portrait pack installed for {theme}");
     Ok(true)
@@ -322,33 +322,6 @@ fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
     let hash = String::from_utf8_lossy(&output.stdout);
     let computed = hash.split_whitespace().next().unwrap_or("");
     Ok(computed == expected)
-}
-
-/// Merge a theme's persona map into the local manifest.json.
-///
-/// The local manifest is the exact format portrait.rs expects:
-/// `{ "theme-slug": { "role": "filename-stem" } }`
-fn merge_local_manifest(
-    cache: &Path,
-    theme: &str,
-    persona_map: &HashMap<String, String>,
-) -> Result<()> {
-    let manifest_path = cache.join("manifest.json");
-
-    let mut manifest: HashMap<String, HashMap<String, String>> = fs::read_to_string(&manifest_path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-
-    manifest.insert(theme.to_string(), persona_map.clone());
-
-    let json = serde_json::to_string_pretty(&manifest).map_err(|e| ForestageError::Session {
-        message: format!("failed to serialize manifest: {e}"),
-    })?;
-
-    fs::write(&manifest_path, json).map_err(|e| ForestageError::Session {
-        message: format!("failed to write manifest: {e}"),
-    })
 }
 
 /// Check if a command exists on PATH.

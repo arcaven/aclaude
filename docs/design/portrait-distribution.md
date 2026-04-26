@@ -3,6 +3,17 @@
 Concrete changes needed in Cloudflare and forestage to ship portrait
 distribution for the 45 themes that already have portraits.
 
+> **Status note (2026-04-26):** the `personas` role→stem map originally
+> described in §2 and emitted by §3's gen-manifest.sh has been retired
+> under the B14 agent taxonomy (orc finding-033). Portrait resolution
+> now derives stems from the `Character` (shortName → full name → first
+> name, prefix-matched against the size directory). See
+> [`docs/agent-taxonomy.md`](../agent-taxonomy.md) for the taxonomy and
+> [`src/portrait.rs::resolve_portrait`](../../src/portrait.rs) for the
+> code. The historical `personas` section in this design is preserved
+> below as design context only — the script no longer emits it and
+> `src/download.rs` no longer reads it.
+
 ---
 
 ## 1. Cloudflare R2 Setup
@@ -63,10 +74,12 @@ Set on upload via rclone flags:
 
 ## 2. Manifest Format
 
+**Current (B14, post-finding-033):**
+
 ```json
 {
   "schema": 1,
-  "updated": "2026-04-11T00:00:00Z",
+  "updated": "2026-04-26T00:00:00Z",
   "base_url": "https://portraits.darkatelier.org/v1",
   "themes": {
     "dune": {
@@ -79,32 +92,69 @@ Set on upload via rclone flags:
       "pack_bytes": 7200000,
       "persona_count": 11
     }
-  },
-  "personas": {
-    "dune": {
-      "orchestrator": "mohiam-44323",
-      "sm": "stilgar-25342",
-      "tea": "kynes-35232",
-      "dev": "paul-54212",
-      "reviewer": "jessica-45343",
-      "architect": "leto-45333",
-      "pm": "irulan-44232",
-      "tech-writer": "thufir-44342",
-      "ux-designer": "alia-34342",
-      "devops": "duncan-35232",
-      "ba": "thufir-54223"
-    }
   }
 }
 ```
 
-**`personas` is the exact shape `portrait.rs:62-74` already deserializes.**
-`load_manifest()` reads `HashMap<String, HashMap<String, String>>` — the
-`personas` field is that type verbatim. On download, extract this field
-and write it to `manifest.json`. No translation.
+`themes` is the only section. Pack URL is derived from `base_url` +
+`/themes/{slug}.tar.gz`. No per-theme URL field — the convention is the
+schema. Portrait resolution does not need a manifest hint at all; see
+[Portrait Resolution](#portrait-resolution) below.
 
-Pack URL derived from `base_url` + `/themes/{slug}.tar.gz`. No per-theme
-URL field needed — the convention is the schema.
+**Historical (pre-B14):** the manifest also carried a `personas` field
+keyed by `theme → role → filename-stem` (e.g. `"dev": "paul-54212"`).
+That map was a role-keyed lookup index used by an earlier
+`portrait.rs` lookup path. It was retired when role became a job
+assignment rather than a character key — `--persona` and `--role`
+could refer to different characters, which made the map serve the
+wrong portrait (the granny→ponder bug class). Existing CDN manifests
+may still carry the field; serde ignores it.
+
+---
+
+## Portrait Resolution
+
+Portrait lookup happens entirely on the client. The manifest tells
+forestage *which themes have packs*; nothing in the manifest tells
+forestage *which file is whose portrait*. Resolution derives the
+filename from the `Character` itself.
+
+For a character with `character: "Granny Weatherwax"` and
+`shortName: "Granny"`, `portrait::resolve_portrait(theme_slug, agent)`
+walks these candidate stems in order:
+
+1. `shortName`, slugified — `"granny"`
+2. Full `character` name, slugified — `"granny-weatherwax"`
+3. First word of the character name, slugified — `"granny"`
+   (deduplicated against earlier entries)
+
+For each size directory (`small/medium/large/original`) under
+`<cache>/<theme>/`, each candidate is tried first as an exact match
+(`<stem>.png`) and then as a prefix match (any `<stem>*.png`). The
+prefix branch handles the CDN's hashed filenames — packs ship
+`granny-35211.png`, `ponder-55233.png`, etc., and the unhashed
+`granny` stem matches by prefix. The first match per size wins.
+
+What this means in practice:
+
+- The pack tarball can use any naming scheme as long as filenames
+  start with the character's `shortName` or first name. CDN packs
+  use a five-digit OCEAN suffix; that's a publishing convention,
+  not a contract.
+- Two characters whose stems collide (Naomi Holden and Naomi
+  Nagata, say, on themes that mix both) need disambiguating
+  short names — the resolver has no theme-aware tiebreak beyond
+  prefix-match alphabetical iteration order.
+- The manifest's old `personas` field (theme → role → stem) was a
+  pre-B14 lookup index. Its role key became meaningless when role
+  became a job assignment, and the override could serve the wrong
+  character's portrait whenever `--persona` and `--role` referred
+  to different characters (the granny→ponder bug class). Removed.
+
+See [`docs/agent-taxonomy.md`](../agent-taxonomy.md) for the broader
+persona/identity/role taxonomy and `src/portrait.rs` for the
+implementation. The behavioral test `resolve_portrait_returns_each_characters_own_file`
+in `src/portrait.rs` is the regression guard.
 
 ---
 
@@ -142,86 +192,25 @@ echo "Packed $count themes to $DIST_DIR"
 
 ### `scripts/portraits/gen-manifest.sh`
 
-Generates manifest.json from packed themes + theme YAMLs.
+Generates manifest.json from packed themes. Reads each pack's
+sha256, byte size, and original-image count to fill `themes`.
 
+Usage:
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-DIST_DIR="${1:?Usage: gen-manifest.sh <dist-dir> <themes-yaml-dir>}"
-THEMES_DIR="${2:?Usage: gen-manifest.sh <dist-dir> <themes-yaml-dir>}"
-BASE_URL="${3:-https://portraits.darkatelier.org/v1}"
-
-# Start JSON
-cat <<HEADER
-{
-  "schema": 1,
-  "updated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "base_url": "$BASE_URL",
-  "themes": {
-HEADER
-
-# Themes section
-first_theme=true
-for pack in "$DIST_DIR"/*.tar.gz; do
-    [[ ! -f "$pack" ]] && continue
-    theme=$(basename "$pack" .tar.gz)
-    sha=$(cat "$DIST_DIR/${theme}.sha256")
-    bytes=$(stat -f%z "$pack" 2>/dev/null || stat -c%s "$pack" 2>/dev/null)
-    persona_count=$(tar tzf "$pack" | grep "^original/.*\.png$" | wc -l | tr -d ' ')
-
-    $first_theme || printf ",\n"
-    first_theme=false
-    printf '    "%s": {"pack_sha256": "%s", "pack_bytes": %s, "persona_count": %s}' \
-        "$theme" "$sha" "$bytes" "$persona_count"
-done
-
-cat <<MIDDLE
-
-  },
-  "personas": {
-MIDDLE
-
-# Personas section — parse theme YAMLs for role→filename mapping
-# Requires yq (https://github.com/mikefarah/yq)
-first_theme=true
-for pack in "$DIST_DIR"/*.tar.gz; do
-    [[ ! -f "$pack" ]] && continue
-    theme=$(basename "$pack" .tar.gz)
-    yaml="$THEMES_DIR/${theme}.yaml"
-    [[ ! -f "$yaml" ]] && continue
-
-    $first_theme || printf ",\n"
-    first_theme=false
-    printf '    "%s": {' "$theme"
-
-    first_role=true
-    # Extract role→shortName+OCEAN from theme YAML
-    for role in $(yq -r '.agents | keys | .[]' "$yaml" 2>/dev/null); do
-        short=$(yq -r ".agents.\"$role\".shortName // .agents.\"$role\".character" "$yaml" 2>/dev/null | head -1)
-        ocean_o=$(yq -r ".agents.\"$role\".ocean.O // empty" "$yaml" 2>/dev/null)
-        [[ -z "$ocean_o" ]] && continue
-        ocean_c=$(yq -r ".agents.\"$role\".ocean.C // empty" "$yaml" 2>/dev/null)
-        ocean_e=$(yq -r ".agents.\"$role\".ocean.E // empty" "$yaml" 2>/dev/null)
-        ocean_a=$(yq -r ".agents.\"$role\".ocean.A // empty" "$yaml" 2>/dev/null)
-        ocean_n=$(yq -r ".agents.\"$role\".ocean.N // empty" "$yaml" 2>/dev/null)
-        slug=$(echo "$short" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/^-//; s/-$//')
-        stem="${slug}-${ocean_o}${ocean_c}${ocean_e}${ocean_a}${ocean_n}"
-
-        $first_role || printf ", "
-        first_role=false
-        printf '"%s": "%s"' "$role" "$stem"
-    done
-
-    printf "}"
-done
-
-cat <<FOOTER
-
-  }
-}
-FOOTER
+./scripts/portraits/gen-manifest.sh dist/portraits
+./scripts/portraits/gen-manifest.sh dist/portraits https://example.com/v1
 ```
+
+Output is written to stdout — redirect to `dist/portraits/manifest.json`.
+
+The script no longer needs a themes-yaml directory or `yq`. The pre-
+B14 version walked theme YAMLs (`.agents` keys, OCEAN fields,
+`shortName`) to build a role→stem map for the manifest's `personas`
+section. Resolution stopped consulting that map (see
+[Portrait Resolution](#portrait-resolution)) and the section was
+dropped along with the YAML walk.
+
+See the script in-tree for the current 60-line implementation.
 
 ### `scripts/portraits/upload-r2.sh`
 
@@ -279,7 +268,22 @@ Env: `FORESTAGE_PORTRAIT__AUTO_DOWNLOAD=false`
 
 ### 4b. New module: `src/download.rs`
 
-All network operations. Subprocess-based, sync. No new crate dependencies.
+All network operations. Subprocess-based, sync. No new crate
+dependencies.
+
+The original design (preserved below as historical context) declared a
+`personas: HashMap<String, HashMap<String, String>>` field on
+`RemoteManifest` and called `merge_local_manifest()` after extraction
+to write a local `manifest.json` keyed by theme→role→stem. Both have
+been removed. Today the deserializer ignores the CDN's leftover
+`personas` field (serde default), and `ensure_portraits` ends after
+writing the `.complete` sentinel — `portrait::resolve_portrait`
+derives stems from the `Character` directly. See
+[Portrait Resolution](#portrait-resolution).
+
+The current source is in `src/download.rs` — the live file is
+authoritative; the historical excerpt below shows the original
+approach.
 
 ```rust
 //! Portrait pack download via subprocess (curl + tar + openssl).
@@ -638,6 +642,11 @@ pub mod download;
 
 ## 5. Flat Layout Migration
 
+> **Status:** never built. The "match against persona entries" step
+> below was specified pre-B14; under the current taxonomy a migration
+> would derive stems from `Character`, not from a role-keyed map.
+> Left here as design context.
+
 Add to `PortraitAction`:
 
 ```rust
@@ -657,18 +666,28 @@ Implementation:
 
 ## 6. Changes Summary
 
+Original implementation pass:
+
 | File | Change |
 |------|--------|
-| `src/download.rs` | **New** — manifest fetch, pack download, SHA256 verify, extract, merge |
+| `src/download.rs` | **New** — manifest fetch, pack download, SHA256 verify, extract |
 | `src/config.rs` | Add `auto_download: bool` to `PortraitConfig` |
 | `src/main.rs` | Add `Portraits` subcommand, call `ensure_portraits` before TUI |
 | `src/lib.rs` | Add `pub mod download` |
-| `src/portrait.rs` | No changes — existing API consumed as-is |
 | `Cargo.toml` | No new dependencies |
-| `scripts/portraits/` | **New** — pack, gen-manifest, upload scripts (run from PF repo) |
+| `scripts/portraits/` | **New** — pack, gen-manifest, upload scripts |
 
 **Zero new Rust dependencies.** Uses `curl`, `tar`, `openssl` via
 subprocess — all present on macOS and standard Linux.
+
+Post-B14 cleanup pass (this revision):
+
+| File | Change |
+|------|--------|
+| `src/download.rs` | Drop `RemoteManifest.personas` field, drop `merge_local_manifest()`, drop the call site in `ensure_portraits` |
+| `src/portrait.rs` | Drop `manifest.json` role-key override (PR #58); resolution becomes character-derived |
+| `scripts/portraits/gen-manifest.sh` | Drop `personas` section emission and the YAML walk; signature simplifies to `(dist-dir, [base-url])` |
+| `docs/design/portrait-distribution.md` | Add §Portrait Resolution; mark `personas` map as historical |
 
 ---
 
@@ -677,12 +696,12 @@ subprocess — all present on macOS and standard Linux.
 | Test | What |
 |------|------|
 | Unit: `verify_sha256` | Known hash matches, mismatch returns false |
-| Unit: `merge_local_manifest` | Writes correct JSON, merges with existing |
 | Unit: `CacheMeta` serde | Round-trips through JSON |
 | Integration: `ensure_portraits` | Mock HTTP with local file server, verify full flow |
 | Manual: fresh install | `forestage` with no cache → downloads theme → portrait renders |
 | Manual: cached | Second launch → no network, instant |
 | Manual: offline | No network → warns, continues without portrait |
-| Manual: `portraits download --all` | All 45 themes downloaded |
+| Manual: `portraits download --all` | All themes downloaded |
 | Manual: `portraits status` | Shows counts |
 | Manual: `portraits clean dune` | Removes theme dir + sentinel |
+| Behavioral: `resolve_portrait_returns_each_characters_own_file` | Granny + Ponder each resolve to their own pack file (granny→ponder regression guard) |
