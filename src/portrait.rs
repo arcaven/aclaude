@@ -84,9 +84,15 @@ fn normalize_stem(name: &str) -> String {
 /// portrait whenever --persona and --role referred to different
 /// characters (the granny→ponder class of bug).
 pub fn resolve_portrait(theme_slug: &str, agent: &Character) -> PortraitPaths {
-    let cache_dir = portrait_cache_dir();
-    let theme_dir = cache_dir.join(theme_slug);
+    let theme_dir = portrait_cache_dir().join(theme_slug);
+    resolve_portrait_in_dir(&theme_dir, agent)
+}
 
+/// Resolve portrait paths against an explicit theme directory. Test
+/// surface for `resolve_portrait` — swap the cache root without touching
+/// XDG env vars. Caller is responsible for the theme-dir layout
+/// (`<theme_dir>/{small,medium,large,original}/<stem>[-suffix].png`).
+fn resolve_portrait_in_dir(theme_dir: &Path, agent: &Character) -> PortraitPaths {
     let mut paths = PortraitPaths {
         small: None,
         medium: None,
@@ -323,9 +329,17 @@ mod tests {
     #[test]
     fn resolve_portrait_no_cache_returns_empty() {
         // Nonexistent theme dir — no ambient state required.
-        let character = Character {
-            character: "Granny Weatherwax".into(),
-            short_name: Some("Granny".into()),
+        let character = make_character("Granny Weatherwax", Some("Granny"));
+        let paths = resolve_portrait("__nonexistent_theme_fixture__", &character);
+        assert!(!paths.has_any());
+    }
+
+    /// Test helper: build a Character with just the fields portrait
+    /// resolution actually consumes (character + short_name).
+    fn make_character(name: &str, short: Option<&str>) -> Character {
+        Character {
+            character: name.to_string(),
+            short_name: short.map(str::to_string),
             visual: None,
             ocean: None,
             style: String::new(),
@@ -337,8 +351,112 @@ mod tests {
             catchphrases: Vec::new(),
             emoji: None,
             helper: None,
-        };
-        let paths = resolve_portrait("__nonexistent_theme_fixture__", &character);
-        assert!(!paths.has_any());
+        }
+    }
+
+    /// Lay down `<theme_dir>/<size>/<filename>` (zero-byte file is enough
+    /// for resolution — we never read content).
+    fn touch(theme_dir: &Path, size: &str, filename: &str) -> PathBuf {
+        let dir = theme_dir.join(size);
+        fs::create_dir_all(&dir).expect("create size dir");
+        let path = dir.join(filename);
+        fs::write(&path, b"").expect("write portrait stub");
+        path
+    }
+
+    /// Regression test for the granny→ponder bug class
+    /// (orc finding-033, B14 taxonomy cleanup).
+    ///
+    /// Two characters in the same theme — Granny Weatherwax and Ponder
+    /// Stibbons — each must resolve to her/his own portrait file. The
+    /// pre-fix code path consulted a manifest.json role-key index and
+    /// could return the wrong character's portrait when --persona and
+    /// --role pointed at different characters. Today the resolver
+    /// derives stems from the Character only, so role cannot influence
+    /// the result.
+    #[test]
+    fn resolve_portrait_returns_each_characters_own_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let theme_dir = tmp.path().join("discworld");
+        let granny_file = touch(&theme_dir, "large", "granny-35211.png");
+        let ponder_file = touch(&theme_dir, "large", "ponder-55233.png");
+
+        let granny = make_character("Granny Weatherwax", Some("Granny"));
+        let ponder = make_character("Ponder Stibbons", Some("Ponder"));
+
+        let granny_paths = resolve_portrait_in_dir(&theme_dir, &granny);
+        assert_eq!(
+            granny_paths.large.as_deref(),
+            Some(granny_file.as_path()),
+            "Granny must resolve to her own file, not Ponder's"
+        );
+
+        let ponder_paths = resolve_portrait_in_dir(&theme_dir, &ponder);
+        assert_eq!(
+            ponder_paths.large.as_deref(),
+            Some(ponder_file.as_path()),
+            "Ponder must resolve to his own file, not Granny's"
+        );
+    }
+
+    /// CDN portraits are written as `<stem>-<hash>.png` (e.g.
+    /// `granny-35211.png`). Resolution must find them via prefix match
+    /// on the unhashed stem.
+    #[test]
+    fn resolve_portrait_prefix_matches_hashed_filenames() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let theme_dir = tmp.path().join("discworld");
+        let file = touch(&theme_dir, "large", "granny-35211.png");
+
+        let granny = make_character("Granny Weatherwax", Some("Granny"));
+        let paths = resolve_portrait_in_dir(&theme_dir, &granny);
+        assert_eq!(paths.large.as_deref(), Some(file.as_path()));
+    }
+
+    /// short_name is the first stem candidate; an exact `<short>.png`
+    /// must win over the full-name file.
+    #[test]
+    fn resolve_portrait_short_name_wins_over_full_name() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let theme_dir = tmp.path().join("discworld");
+        let short_file = touch(&theme_dir, "large", "granny.png");
+        let _full_file = touch(&theme_dir, "large", "granny-weatherwax.png");
+
+        let granny = make_character("Granny Weatherwax", Some("Granny"));
+        let paths = resolve_portrait_in_dir(&theme_dir, &granny);
+        assert_eq!(
+            paths.large.as_deref(),
+            Some(short_file.as_path()),
+            "exact short_name match must win over full-name match"
+        );
+    }
+
+    /// best_for_size falls through the preference chain
+    /// (small → medium → large → original) when the requested size is
+    /// missing.
+    #[test]
+    fn resolve_portrait_size_fallback_picks_next_available() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let theme_dir = tmp.path().join("discworld");
+        let large_file = touch(&theme_dir, "large", "granny-35211.png");
+
+        let granny = make_character("Granny Weatherwax", Some("Granny"));
+        let paths = resolve_portrait_in_dir(&theme_dir, &granny);
+        assert_eq!(paths.best_for_size("small"), Some(large_file.as_path()));
+        assert_eq!(paths.best_for_size("medium"), Some(large_file.as_path()));
+        assert_eq!(paths.best_for_size("large"), Some(large_file.as_path()));
+    }
+
+    /// Confirms — at the type level, not just by behavior — that
+    /// resolution depends only on theme directory + Character, never
+    /// on a role string.
+    #[test]
+    fn resolve_portrait_signature_does_not_take_a_role() {
+        // If someone reintroduces a role parameter, this test stops
+        // compiling. Documents the B14 contract: role is a job
+        // assignment, never a portrait selector.
+        fn _accepts_only_dir_and_character(dir: &Path, agent: &Character) -> PortraitPaths {
+            resolve_portrait_in_dir(dir, agent)
+        }
     }
 }

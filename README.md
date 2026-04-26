@@ -77,7 +77,7 @@ Streaming mode provides structured access to token usage, session cost, and tool
 
 ## What It Does
 
-- **Persona theming** — 118 theme rosters (Dune, West Wing, Hitchhiker's Guide, ...) with per-role characters, styles, and optional portrait images (Kitty/Ghostty inline display)
+- **Persona theming** — 100 theme rosters (Dune, West Wing, Hitchhiker's Guide, ...) of characters with styles and optional portrait images (Kitty/Ghostty inline display). Persona, identity, and role(s) are independent CLI flags — see [docs/agent-taxonomy.md](docs/agent-taxonomy.md).
 - **Configuration** — TOML config with 5-layer merge: defaults -> global (`~/.config/forestage/`) -> local (`.forestage/`) -> env (`FORESTAGE_*`) -> CLI flags
 - **Claude Code passthrough** — any `claude` CLI flag works via `--` separator
 - **Three session modes** — interactive TUI (default), one-shot prompt (`-p`), streaming agent (`--streaming`)
