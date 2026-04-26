@@ -327,4 +327,139 @@ mod tests {
             "themes with empty source/citation: {empty_source:?}"
         );
     }
+
+    /// Construct a Character with the supplied minimal fields. Test helper.
+    fn character(name: &str, style: &str) -> Character {
+        Character {
+            character: name.to_string(),
+            short_name: None,
+            visual: None,
+            ocean: None,
+            style: style.to_string(),
+            expertise: String::new(),
+            r#trait: String::new(),
+            backstory_role: String::new(),
+            backstory_role_description: String::new(),
+            quirks: Vec::new(),
+            catchphrases: Vec::new(),
+            emoji: None,
+            helper: None,
+        }
+    }
+
+    /// Construct a ThemeFile with one character and a source citation.
+    fn theme_with_source(name: &str, source: &str) -> ThemeFile {
+        ThemeFile {
+            category: String::new(),
+            theme: ThemeInfo {
+                name: name.to_string(),
+                description: String::new(),
+                source: source.to_string(),
+                user_title: None,
+                character_immersion: None,
+                spinner_verbs: None,
+                dimensions: None,
+            },
+            characters: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn full_prompt_single_role_uses_singular_form() {
+        let theme = theme_with_source("The Expanse", "The Expanse");
+        let agent = character("Naomi Nagata", "direct, warm");
+        let out = build_full_prompt(&theme, &agent, "low", "", "reviewer");
+        assert!(
+            out.contains("Your current role on this team is: reviewer."),
+            "expected singular role form, got:\n{out}"
+        );
+        assert!(
+            !out.contains("Your current roles on this team"),
+            "expected no plural form, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn full_prompt_multi_role_uses_plural_form_and_preserves_order() {
+        let theme = theme_with_source("The Expanse", "The Expanse");
+        let agent = character("Naomi Nagata", "direct, warm");
+        let out = build_full_prompt(&theme, &agent, "low", "", "reviewer,troubleshooter");
+        assert!(
+            out.contains("Your current roles on this team are: reviewer, troubleshooter."),
+            "expected plural CSV form preserving order, got:\n{out}"
+        );
+        assert!(
+            !out.contains("Your current role on this team is:"),
+            "expected no singular form, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn full_prompt_trims_whitespace_in_role_csv() {
+        let theme = theme_with_source("The Expanse", "The Expanse");
+        let agent = character("Naomi Nagata", "direct, warm");
+        let out = build_full_prompt(&theme, &agent, "none", "", " reviewer ,  troubleshooter ");
+        assert!(
+            out.contains("reviewer, troubleshooter"),
+            "expected whitespace-trimmed roles, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn full_prompt_layers_identity_when_provided() {
+        let theme = theme_with_source("The Expanse", "The Expanse");
+        let agent = character("Naomi Nagata", "direct, warm");
+        let out = build_full_prompt(&theme, &agent, "none", "homicide detective", "");
+        assert!(
+            out.contains("you have become a homicide detective"),
+            "expected identity layer, got:\n{out}"
+        );
+        assert!(
+            !out.contains("Your current role"),
+            "expected no role layer when role empty, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn full_prompt_skips_empty_role_and_identity_layers() {
+        let theme = theme_with_source("The Expanse", "The Expanse");
+        let agent = character("Naomi Nagata", "direct, warm");
+        let out = build_full_prompt(&theme, &agent, "none", "", "");
+        // immersion=none → empty persona section; both other layers empty → fully empty.
+        assert!(
+            out.is_empty(),
+            "expected empty prompt with no immersion, no identity, no role, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn full_prompt_combines_persona_identity_and_roles() {
+        let theme = theme_with_source("The Expanse", "The Expanse");
+        let agent = character("Naomi Nagata", "direct, warm");
+        let out = build_full_prompt(
+            &theme,
+            &agent,
+            "low",
+            "homicide detective",
+            "reviewer,troubleshooter",
+        );
+        // All three layers present, separated by blank lines.
+        assert!(
+            out.contains("Naomi Nagata"),
+            "expected persona layer, got:\n{out}"
+        );
+        assert!(
+            out.contains("you have become a homicide detective"),
+            "expected identity layer, got:\n{out}"
+        );
+        assert!(
+            out.contains("Your current roles on this team are: reviewer, troubleshooter."),
+            "expected plural role layer, got:\n{out}"
+        );
+        assert_eq!(
+            out.matches("\n\n").count(),
+            2,
+            "expected exactly two blank-line separators between three layers, got:\n{out}"
+        );
+    }
 }
