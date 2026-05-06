@@ -109,8 +109,11 @@ Read charter.md before any substantive work. It contains:
 3. Write an Exploration Brief in _kos/probes/
 4. Do the probe work
 5. Write a finding in _kos/findings/
-6. Harvest: update affected nodes, move files if confidence changed
-7. Update charter.md if bedrock changed
+6. Harvest: update affected NODES (`_kos/nodes/{bedrock,frontier,graveyard}/*.yaml`),
+   move files if confidence changed. Charter is renderer output (per orc F22,
+   `kos charter render`); do NOT hand-edit charter prose outside
+   `<!-- backdrop -->` blocks. Subrepo charter renderer extension tracked
+   in aae-orc-gezz.
 
 Cross-repo questions belong in the orchestrator's _kos/, not here.
 
@@ -130,6 +133,12 @@ Always accompany with a commit message explaining the evidence.
 ### Harvest Verification
 Before starting the next cycle, verify:
 - [ ] Finding written and committed
-- [ ] Charter updated if bedrock changed
+- [ ] Bedrock/frontier/graveyard NODES updated if state changed —
+      edit `_kos/nodes/{bedrock,frontier,graveyard}/*.yaml`, NOT charter
+      prose. Charter is renderer output (per orc F22,
+      `brief-charter-as-projection-renderer.md`, `kos charter render`).
+      Subrepo extension tracked in aae-orc-gezz; until it ships, treat
+      charter sections outside `<!-- backdrop -->` blocks as read-only
+      and edit the underlying nodes.
 - [ ] Frontier questions updated (closed, opened, or revised)
 - [ ] Exploration briefs marked complete or carried forward
