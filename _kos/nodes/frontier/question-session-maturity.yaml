@@ -1,0 +1,60 @@
+id: question-session-maturity
+type: question
+confidence: frontier
+title: "What's the remaining maturity work on session management — CLI terminology, pane listing, one-shot output, Linux integration tests?"
+tags:
+  - forestage
+  - sessions
+  - maturity
+content: |
+  tmux-cmc core protocol works on macOS + Linux. Session management
+  CLI shipped (`elem-smart-control-session`). Session-019 added
+  pane-to-existing-session behavior: `session start` creates a new
+  pane via `split_pane` when the target session exists, with
+  `--persona` and `--role` per-pane overrides. Default session name
+  is configurable (`tmux.default_name`, defaults to `"forestage"`).
+  `--new` flag forces fresh session with petname. This partially
+  addresses forestage#42 (session affinity) and #17 (pane management).
+
+  **Remaining open items:**
+  - **Session = team CLI terminology.** Current commands use
+    "session" vocabulary; the mental model is session=team, pane=agent.
+    CLI term refactoring deferred until the behavior is validated.
+  - **Pane listing (forestage#17 partial).** `session pane add` works
+    via `session start`, but `session pane list` is not yet implemented.
+  - **One-shot prompt outputs raw JSON instead of text (forestage#13).**
+    The programmatic flow needs its own output rendering path.
+    Tracked: `aae-orc-76v`.
+  - **No integration tests against live tmux on Linux.** All platform
+    bugs found by users, not by tests. Cross-ref: orc B13
+    (platform-specific testing).
+
+  **Shipped since session-019:**
+  - `NewSessionOptions.start_command` + shell-skip on add-window
+    eliminated the send-keys command echo (forestage#22 closed,
+    session-026, commits aa12331 + 6c49d6d in forestage,
+    f9ec606 in tmux-cmc).
+  - forestage#19 regression tests (1e350a7).
+  - Cold-start inject race (marvel-driven spawn) fixed by skipping
+    the picker's stdio query under `FORESTAGE_MARVEL=1` (PR #55,
+    4df3740) — see `elem-terminal-image-three-tier`.
+
+  Control-session architecture question (#15) — resolved
+  (`elem-smart-control-session`).
+  Terminal image question — resolved (`elem-terminal-image-three-tier`).
+
+  Cross-ref: orc F20.
+edges:
+  - target: elem-smart-control-session
+    type: leaves-open
+  - target: elem-terminal-image-three-tier
+    type: related
+  - target: aae-orc::elem-tmux-cmc
+    type: related
+provenance:
+  created_by: human
+  session: session-019
+  created_at: "2026-04-15"
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: charter.md F8 prose

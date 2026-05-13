@@ -1,0 +1,60 @@
+id: question-tui-performance
+type: question
+confidence: frontier
+title: "What's the TUI's performance under load and behavior in edge cases (long conversations, render cache, permission protocol)?"
+tags:
+  - forestage
+  - tui
+  - performance
+content: |
+  finding-010 validated the bridge architecture (B4 +
+  `elem-bridge-pattern`) but flagged unresolved performance and
+  completeness questions.
+
+  **Known performance issues:**
+  - Render slowdown under load (F010-e). Likely causes: 20fps tick
+    rate, no render cache, markdown renderer called per-frame.
+  - Long-conversation behavior (1000+ turns) untested.
+  - Portrait `cell_size` calculation may not match ratatui-image's
+    internal scaling.
+
+  **Known protocol gaps:**
+  - `send_permission_response` not validated against Claude Code's
+    hook system — format is unconfirmed.
+
+  **Patterns identified by adversarial review of four Rust
+  Claude-Code reimplementations (session-011):**
+  - State machine (`AppStatus` enum drives visual feedback) —
+    *implemented*. Observed in srg-claude-code-rust.
+  - Streaming text batching (45ms/2KB buffer) — *implemented*.
+    Observed in pi_agent_rust's `UiStreamDeltaBatcher`.
+  - Render cache with split policy (segment long messages at paragraph
+    boundaries) — *not yet implemented*; may be the F010-e cause.
+  - Incremental markdown parsing — *not yet implemented*.
+  - VCR cassette testing (record NDJSON, replay deterministically) —
+    *not yet implemented*. Observed in pi_agent_rust.
+
+  **Open architectural questions:**
+  - Does `--include-partial-messages` provide enough granularity for
+    smooth streaming text, or do we need a custom tokenizer?
+  - Can permission prompts be intercepted and re-rendered in
+    forestage's TUI, or must they fall through to Claude Code's
+    prompts?
+  - Should the TUI be a separate crate (`forestage-tui`) or stay inline?
+    Reviewed projects split both ways (claw-code-rust separates,
+    claurst separates, srg-claude-code-rust inlines).
+
+  See: `docs/research/rust-claude-reimplementations-20260410.md`.
+  Cross-ref: orc F14.
+edges:
+  - target: elem-bridge-pattern
+    type: leaves-open
+  - target: aae-orc::elem-byoa-platform
+    type: related
+provenance:
+  created_by: human
+  session: session-012
+  created_at: "2026-04-15"
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: charter.md F6 prose

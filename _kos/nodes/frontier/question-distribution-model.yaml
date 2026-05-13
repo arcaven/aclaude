@@ -1,0 +1,54 @@
+id: question-distribution-model
+type: question
+confidence: frontier
+title: "What's the Rust-era distribution model — brew formula, self-update, dual channels — and how do they coordinate?"
+tags:
+  - forestage
+  - distribution
+content: |
+  The TypeScript distribution probe (38 findings) is mostly stale after
+  the Rust rewrite (`grv-typescript-stack`). What survives are the
+  patterns, not the implementations: brew tap pipeline, dual
+  alpha/stable channels, self-update UX, code signing workflow. The
+  *implementations* all need re-validation in the Rust artifact world.
+
+  **Why this matters beyond forestage itself:** solving distribution
+  unblocks the full platform. Marvel needs forestage as a real workload
+  to manage (not just source-cloned). Director needs forestage instances
+  it can connect to. Spectacle/packs need an installed tool to test
+  pack injection against. RD itself needs forestage usable in daily
+  work immediately — working from source is a developer-only path.
+
+  The pennyfarthing failure mode (`grv-pennyfarthing`): per-repo install,
+  never distributable, every user except the developer churned out
+  because install/update was never solved.
+
+  Three axes to re-validate in Rust:
+  - **Self-updating binary** — following Claude Code's `~/.local/share/`
+    + symlink rotation model.
+  - **Brew formula** — user sovereignty (`aae-orc::val-user-sovereignty`).
+  - **Dual-track stable/alpha channels** — following ThreeDoors' proven
+    pattern.
+
+  `question-version-coordination` (F4) is the unresolved tension
+  between brew and self-update both shipping artifacts: which channel
+  wins when both are installed, and how does build.rs version injection
+  surface that?
+
+  Cross-ref: orc F11.
+edges:
+  - target: grv-typescript-stack
+    type: derives
+  - target: grv-pennyfarthing
+    type: discovered_from
+  - target: question-version-coordination
+    type: related
+  - target: aae-orc::val-user-sovereignty
+    type: related
+provenance:
+  created_by: human
+  session: session-021
+  created_at: "2026-04-15"
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: charter.md F5 prose

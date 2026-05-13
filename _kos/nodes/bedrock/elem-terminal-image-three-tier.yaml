@@ -1,0 +1,47 @@
+id: elem-terminal-image-three-tier
+type: element
+confidence: bedrock
+title: "terminal image support — three-tier detection, deny-default for known-bad, graceful for unknown"
+content: |
+  Three-tier detection model, replacing the earlier hardcoded
+  Kitty/Ghostty allowlist:
+
+  1. **Known-good** — terminal-specific env vars (`KITTY_WINDOW_ID`,
+     `WEZTERM_EXECUTABLE`, `WEZTERM_PANE`, `GHOSTTY_RESOURCES_DIR`).
+     These survive inside tmux where `TERM_PROGRAM` is overwritten.
+  2. **Known-bad** — `TERM=dumb`, `TERM=linux`,
+     `TERM_PROGRAM=apple_terminal`. Skip immediately.
+  3. **Unknown** — attempt with best available tool, graceful failure
+     (cosmetic only — never blocks the session).
+
+  Display tool fallback chain: `kitten icat` → `wezterm imgcat` → skip.
+
+  tmux graphics passthrough is auto-enabled on forestage's dedicated
+  socket (`allow-passthrough on`). Config override:
+  `[portrait] display = auto|always|never` with
+  `FORESTAGE_PORTRAIT__DISPLAY` env var.
+
+  **Cold-start inject race fix (session-030, PR #55):** the terminal
+  capability picker's stdio query (DA1, CPR) steals the first
+  post-spawn keystrokes when forestage is launched under marvel's
+  `send-keys`-based inject path. When `FORESTAGE_MARVEL=1` (set by
+  marvel's forestage adapter), the picker skips the stdio query and
+  falls back to env-only detection. Composes with
+  `elem-marvel-adapter-contract`.
+
+  Evidence: finding-009-terminal-image-support (session-011).
+  Distribution-verified — alpha release + Homebrew tap + installed
+  binary tested (WezTerm, macOS). No tmux-cmc changes required
+  (existing set_option API sufficient).
+edges:
+  - target: elem-marvel-adapter-contract
+    type: related
+  - target: aae-orc::elem-tmux-cmc
+    type: related
+provenance:
+  created_by: human
+  session: session-011
+  created_at: "2026-04-15"
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: charter.md B6 prose (per aae-orc-5cs2)

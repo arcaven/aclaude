@@ -1,0 +1,44 @@
+id: elem-smart-control-session
+type: element
+confidence: bedrock
+title: "tmux session management — smart control session (no dedicated _ctrl for single use)"
+content: |
+  Two-pattern session model, transparently upgraded:
+
+  - **Pattern 1 (single session):** tmux control mode attaches directly
+    to the user's session. No dedicated `_ctrl` session. Zero overhead.
+  - **Pattern 2 (multiple sessions):** shared `_ctrl` session created
+    automatically, one per socket. Transparent upgrade from Pattern 1
+    when a second session appears. `_ctrl` is removed when the last
+    user session stops.
+
+  CLI surface:
+  - `session start` — petname generation, auto-attach
+  - `session attach` — auto-select when a single session exists
+  - `session stop --all` — bulk stop
+  - `session list --names --all` — inventory
+  - `session status` — formatted table
+
+  Why this is bedrock:
+  - **Research claim falsified.** finding-006-control-session-probe
+    (session-010) tested the assertion that control mode and terminal
+    clients "get weird" on the same session. They don't — the `-d` flag
+    is the real constraint, not control mode itself (F006-d, F006-f).
+  - The smart upgrade is the kos lesson applied to product: do the
+    cheapest thing that works, escalate only when forced by use.
+  - This composes with `elem-bridge-pattern` — the bridge is the
+    NDJSON consumer; sessions are the tmux substrate.
+
+  Evidence: finding-006-control-session-probe (session-010).
+edges:
+  - target: elem-bridge-pattern
+    type: related
+  - target: question-session-maturity
+    type: leaves-open
+provenance:
+  created_by: human
+  session: session-010
+  created_at: "2026-04-15"
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: charter.md B5 prose

@@ -1,0 +1,49 @@
+id: elem-agent-taxonomy-cli-flags
+type: element
+confidence: bedrock
+title: "agent taxonomy — --theme / --persona / --identity / --role CLI flags match orc B14"
+content: |
+  Four CLI flags map directly to the orchestrator's five-primitive
+  taxonomy (`aae-orc::elem-byoa-platform` and orc B14):
+
+  - `--theme <slug>` — the roster (which fictional universe)
+  - `--persona <character-slug>` — the costume (which character)
+  - `--identity <free-form>` — the lens (e.g. "homicide detective")
+  - `--role <csv>` — the job(s), comma-separated
+    (e.g. "reviewer,troubleshooter")
+
+  (The fifth primitive, **process**, is a team-level concern carried
+  in marvel manifests, not on the agent CLI.)
+
+  Implementation:
+  - `persona::Character` struct (`src/persona.rs:47`) models an
+    individual character resolved from the theme roster.
+  - `resolve_character()` looks up a persona slug against the embedded
+    theme YAMLs.
+  - `build_full_prompt()` composes persona + identity + role(s) into
+    the system-prompt segment passed to claude via
+    `--append-system-prompt`.
+
+  Multiple roles are first-class. A single agent can hold
+  ("reviewer", "troubleshooter") simultaneously. Theme is a *roster*
+  (container of characters), not a team
+  (`aae-orc::elem-byoa-platform`).
+
+  Resolves former F7 (persona model). Evidence: session-022, commits
+  2851c83 (theme YAML rekey from role-key to character-slug-key) and
+  f6cb783 (CLI flags). Cross-ref: orc B14, finding-019-agent-taxonomy,
+  finding-020-agentic-primitives.
+edges:
+  - target: aae-orc::elem-byoa-platform
+    type: implements
+  - target: elem-compile-time-theme-embedding
+    type: related
+  - target: elem-marvel-adapter-contract
+    type: related
+provenance:
+  created_by: human
+  session: session-022
+  created_at: "2026-04-15"
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: charter.md B7 prose (and former F7 RESOLVED → B7)

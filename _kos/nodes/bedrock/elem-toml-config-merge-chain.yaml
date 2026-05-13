@@ -1,0 +1,41 @@
+id: elem-toml-config-merge-chain
+type: element
+confidence: bedrock
+title: "TOML config with five-layer merge chain — defaults → global → local → env → flags"
+content: |
+  Configuration comes from five sources, merged in order with later
+  layers winning:
+
+  1. Built-in defaults (compiled into the binary)
+  2. Global: `~/.config/forestage/` (user-scope)
+  3. Local: `.forestage/` (project-scope, checked in)
+  4. Environment: `FORESTAGE_*` variables
+  5. CLI flags
+
+  All file formats are TOML. The merge order is a fleet convention
+  inherited from the orchestrator pattern — not a forestage-local
+  probe finding. Other compiled-language tools in the fleet (kos,
+  sideshow, switchboard) use the same shape.
+
+  Why this is bedrock:
+  - The order is fixed (defaults are the floor, flags are the ceiling).
+    Inverting it produces footguns: env vars overriding flags would
+    surprise every user familiar with Unix convention.
+  - Each layer is independently testable and removable. Forestage
+    works with zero config; it works with config only at the local
+    layer; it works in CI with only env vars.
+  - The shape composes with the orchestrator's auth-delegation
+    posture (see SOUL §3): forestage never owns auth state, so no
+    secret needs to traverse this chain.
+
+  Evidence: implemented.
+edges:
+  - target: aae-orc::elem-byoa-platform
+    type: implements
+provenance:
+  created_by: human
+  session: session-021
+  created_at: "2026-04-15"
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: charter.md B2 prose
