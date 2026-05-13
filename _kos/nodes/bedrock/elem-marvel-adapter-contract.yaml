@@ -1,0 +1,67 @@
+id: elem-marvel-adapter-contract
+type: element
+confidence: bedrock
+title: "Marvel adapter contract — six native CLI flags + dangerous-permissions pass-through"
+content: |
+  Marvel's forestage adapter launches forestage as a managed agent
+  by passing six native CLI flags + an optional dangerous-
+  permissions flag. The flags are the contract between marvel
+  (the orchestrator) and forestage (the agent console).
+
+  ## Six native flags (set by marvel's forestage adapter)
+
+  - `--name` — agent session name (e.g. `squad-worker-g1-0`)
+  - `--workspace` — marvel workspace
+  - `--team` — marvel team
+  - `--socket` — marvel daemon socket path (for heartbeat + comms)
+  - `--permission-mode` — Claude Code permission mode, passed
+    through to the claude subprocess
+  - `--script` — Lua script path (future: native lua supervisor
+    support)
+
+  ## Permissions pass-through
+
+  `--dangerously-skip-permissions` (aliased `--yolo`, session-026
+  #37 Part A) maps to Claude Code's flag of the same name. Intended
+  for autonomous agents where no interactive approver exists.
+  Never enable for interactive sessions you don't fully trust.
+
+  ## Identity composition
+
+  - **forestage identity flags** (`--persona`, `--identity`,
+    `--role`) — passed directly to forestage as native flags
+  - **claude system prompt** — composed by forestage's
+    `build_full_prompt()` and passed to claude via
+    `--append-system-prompt`
+
+  ## Implementation
+
+  - `config::MarvelConfig` (`src/config.rs:135`) captures the
+    marvel-injected identity
+  - Permission mode is threaded through every claude spawn path
+  - End-to-end tested session-020: marvel daemon launching 2
+    forestage agents (Dune theme, reviewer + dev roles) in tmux
+    panes running Claude Code
+
+  ## Substrate (un-examined here)
+
+  - **Subprocess protocol shape** (NDJSON streaming via stdin/stdout
+    pipes) — see elem-bridge-pattern for the bridge half
+  - **CLI flags as the contract surface** vs. config file / IPC /
+    env var — chosen for simplicity; not probed against alternatives
+edges:
+  - target: elem-bridge-pattern
+    type: depends-on
+  - target: elem-agent-taxonomy
+    type: implements
+evidence:
+  - "session-020 commit fd3b85d (marvel flags wired)"
+  - "session-026 commits 4c4e28a (yolo), ca52de6 (adapter passthrough)"
+  - "F15 role-naming bug aae-orc-p6b closed via this work"
+  - "marvel B8 (runtime adapter framework) — the marvel-side contract counterpart"
+provenance:
+  created_by: human
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: forestage/charter.md B8 prose (20 lines)
+  cross_ref: marvel B8

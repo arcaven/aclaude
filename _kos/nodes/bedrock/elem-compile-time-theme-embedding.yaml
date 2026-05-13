@@ -1,0 +1,38 @@
+id: elem-compile-time-theme-embedding
+type: element
+confidence: bedrock
+title: "Compile-time theme embedding — 100 character themes baked into the binary"
+content: |
+  `build.rs` reads all `personas/themes/*.yaml` at compile time and
+  generates a Rust source file with embedded theme content. Themes
+  are available at runtime without filesystem access — the binary
+  is self-contained.
+
+  Portraits remain external (global cache); only the theme metadata
+  is embedded.
+
+  Theme YAMLs are keyed by **character slug** (e.g. `naomi-nagata`,
+  `paul-atreides`), not by role. Rekeyed in session-022 to support
+  the agent taxonomy: any persona can fill any role. Before
+  session-022, themes had been keyed by role (a pennyfarthing
+  inheritance), which conflated character with job and prevented
+  multi-role agents.
+
+  This is implementation that supports B7 (agent taxonomy) and is
+  load-bearing: changing the embedding mechanism (e.g. to filesystem
+  loading) would change the binary's portability story (B1) and
+  break the no-runtime-deps invariant.
+edges:
+  - target: decision-language-rust
+    type: derives
+  - target: elem-agent-taxonomy
+    type: supports
+evidence:
+  - "build.rs generation pipeline"
+  - "personas/themes/*.yaml (100 character files post-session-022)"
+  - "session-022 rekey, commit 2851c83"
+provenance:
+  created_by: human
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: forestage/charter.md B3 prose

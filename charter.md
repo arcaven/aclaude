@@ -33,65 +33,43 @@ See also: docs/security/axios-supply-chain-2026-03-31.md.
 
 ### B2: TOML Configuration
 
-Config merge order: defaults → global (~/.config/forestage/) → local (.forestage/)
-→ env (FORESTAGE_*) → CLI flags. TOML format for all config files.
+Config merge order: defaults → global (~/.config/forestage/) → local
+(.forestage/) → env (FORESTAGE_*) → CLI flags. TOML format for all
+config files.
 
-Evidence: implemented, follows orchestrator convention.
+Provenance: inherited from orchestrator convention (TOML across the
+fleet); not deliberated locally for forestage. The merge-order chain
+(defaults → global → local → env → flags) is a fleet pattern, not a
+forestage probe-finding.
+
+Evidence: implemented.
 
 ### B3: Compile-Time Theme Embedding
 
-100 theme YAMLs embedded in binary via build.rs code generation at compile
-time. Themes available at runtime without filesystem access — binary is
-self-contained. Portraits remain external (global cache).
+100 theme YAMLs embedded in binary via build.rs at compile time. Themes
+available at runtime without filesystem access; binary is self-contained.
+Keyed by character slug (post session-022 rekey) to support multi-role
+agents per B7.
 
-Theme YAMLs are keyed by **character slug** (e.g. `naomi-nagata`,
-`paul-atreides`), not by role. Rekeyed in session-022 to support the
-agent taxonomy (B7): any persona can fill any role. See B7 for the CLI
-surface and the B14 taxonomy in the orc charter.
+Detail: `_kos/nodes/bedrock/elem-compile-time-theme-embedding.yaml`.
 
-Evidence: build.rs reads personas/themes/*.yaml and generates Rust source.
-Rekey: session-022, commit 2851c83.
+Evidence: build.rs, commit 2851c83.
 
 ### B4: Headless Claude Code with Custom TUI (Bridge Architecture)
 
-Claude Code runs as a headless subprocess via NDJSON streaming. forestage
-renders a custom ratatui TUI around the event stream. The bridge pattern
-(bridge.rs, protocol_ext.rs at src/ level) is TUI-agnostic — the TUI is
-one consumer module under src/tui/, enabling dual-mode (human TUI + future
-marvel diagnostic) without restructuring.
+Claude Code runs as a headless subprocess via NDJSON streaming;
+forestage renders a custom ratatui TUI around the event stream.
+The bridge pattern (`bridge.rs`, `protocol_ext.rs` at `src/` level)
+is TUI-agnostic — enables dual-mode (human TUI + future marvel
+diagnostic) without restructuring. `--mode forestage|claude` flag
+selects runtime.
 
-**Bridge layer** (no ratatui dependencies):
-- bridge.rs: subprocess lifecycle, event channel (mpsc), SessionMetrics
-  (Arc<Mutex<>>), stdin writer, statusline throttling
-- protocol_ext.rs: BridgeParser (stateful, 17 event types), BridgeEvent
-  enum (16 variants), SessionMetrics aggregation (tokens, cost, context,
-  tool counts, model, permissions, slash commands)
+Bridge / TUI layer detail, the 8 TUI modules, batching parameters,
+and named substrate (NDJSON inherited from marvel, ratatui without
+probe, Arc<Mutex<>> threading):
+`_kos/nodes/bedrock/elem-bridge-pattern.yaml`.
 
-**TUI layer** (src/tui/, 8 modules):
-- AppStatus state machine (Connecting, Ready, Thinking, Streaming,
-  ToolRunning, Error) drives input gating and visual feedback
-- 45ms/2KB text batching eliminates per-token render overhead
-- Unified diff rendering for Edit operations, tool-specific renderers
-  (Read/Write/Bash/Grep/Glob)
-- Permission mode toggle (Shift+Tab) with inline approval dialog
-- Slash commands with dynamic tab completion and @ file path completion
-- Cursor-positioned input with Ctrl+A/E/W/U editing, mouse wheel scroll
-- Thinking block display (Alt+T toggle)
-- Markdown rendering (code blocks, headers, lists, bold/italic/code)
-- Transcript mode (Ctrl+O cycling normal/transcript/focus)
-- Portrait overlay with hotkeys (Ctrl+P position, Alt+P on/off, Alt+S
-  size cycle)
-- Input field expansion, bracketed paste support
-
-**`--mode forestage|claude` flag** selects runtime:
-- `forestage` (default): headless subprocess + custom ratatui TUI
-- `claude`: inherited stdio passthrough to native Claude Code TUI
-
-Configurable via CLI flag, config file, or FORESTAGE_SESSION__MODE env var.
-
-Evidence: 8 phases, 21 commits, ~7000 lines, 94 tests. PR #24 merged to
-develop. finding-010-tui-prototype (partial — architecture validated,
-performance not yet profiled).
+Evidence: PR #24 merged, ~7000 lines, 94 tests, finding-010 (partial).
 Cross-ref: orchestrator F14.
 
 ### B5: Session Management (Smart Control Session)
@@ -163,32 +141,20 @@ finding-019-agent-taxonomy, finding-020-agentic-primitives.
 
 ### B8: Marvel Integration Flags and `--dangerously-skip-permissions`
 
-Six native CLI flags set by marvel's forestage adapter when launching
-agents as part of a team:
+Six native CLI flags (`--name`, `--workspace`, `--team`, `--socket`,
+`--permission-mode`, `--script`) form the contract between marvel's
+forestage adapter and forestage. `--dangerously-skip-permissions`
+(aliased `--yolo`, session-026 #37 Part A) passes through to Claude
+Code's flag of the same name — for autonomous agents only, never for
+interactive sessions you don't fully trust.
 
-- `--name` — agent session name (e.g. "squad-worker-g1-0")
-- `--workspace` — marvel workspace
-- `--team` — marvel team
-- `--socket` — marvel daemon socket path (for heartbeat + comms)
-- `--permission-mode` — Claude Code permission mode, passed through to
-  the claude subprocess
-- `--script` — Lua script path (future: native lua supervisor support)
+Flag detail, permission-mode threading, identity-composition path,
+and named substrate (CLI flags as contract surface, not probed
+against alternatives): `_kos/nodes/bedrock/elem-marvel-adapter-contract.yaml`.
 
-Plus `--dangerously-skip-permissions` (aliased `--yolo`) from session-
-026 (#37 Part A) — maps to Claude Code's flag of the same name, intended
-for autonomous agents where no interactive approver exists. Never enable
-for interactive sessions you don't fully trust.
-
-`config::MarvelConfig` (src/config.rs:135) captures the marvel-injected
-identity. Permission mode is threaded through every claude spawn path.
-Identity (persona/identity/role) passes to forestage as native flags;
-system prompt passes to claude via `--append-system-prompt`.
-
-Evidence: session-020 (fd3b85d marvel flags, end-to-end tested with
-marvel daemon launching 2 forestage agents — Dune theme, reviewer+dev
-roles — in tmux panes running Claude Code), session-026 (4c4e28a yolo,
-ca52de6 adapter passthrough). F15 role-naming bug (aae-orc-p6b) closed.
-Cross-ref: marvel B8 (runtime adapter framework).
+Evidence: session-020 fd3b85d, session-026 4c4e28a + ca52de6.
+F15 role-naming bug aae-orc-p6b closed.
+Cross-ref: marvel B8.
 
 ---
 

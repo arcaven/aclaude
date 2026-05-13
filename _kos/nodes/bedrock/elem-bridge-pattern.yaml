@@ -1,0 +1,75 @@
+id: elem-bridge-pattern
+type: element
+confidence: bedrock
+title: "Bridge pattern — TUI-agnostic subprocess bridge over Claude Code NDJSON"
+content: |
+  Claude Code runs as a headless subprocess via NDJSON streaming.
+  forestage renders a custom ratatui TUI around the event stream.
+  The bridge pattern is TUI-agnostic: the TUI is one consumer
+  module under `src/tui/`, enabling dual-mode (human TUI + future
+  marvel diagnostic) without restructuring.
+
+  ## Bridge layer (no ratatui dependencies)
+
+  - `bridge.rs` — subprocess lifecycle, event channel (mpsc),
+    SessionMetrics (Arc<Mutex<>>), stdin writer, statusline
+    throttling
+  - `protocol_ext.rs` — BridgeParser (stateful, 17 event types),
+    BridgeEvent enum (16 variants), SessionMetrics aggregation
+    (tokens, cost, context, tool counts, model, permissions,
+    slash commands)
+
+  ## TUI layer (`src/tui/`, 8 modules)
+
+  - **AppStatus state machine** (Connecting, Ready, Thinking,
+    Streaming, ToolRunning, Error) drives input gating and visual
+    feedback
+  - **45ms / 2KB text batching** eliminates per-token render
+    overhead
+  - **Unified diff rendering** for Edit operations
+  - **Tool-specific renderers** (Read, Write, Bash, Grep, Glob)
+  - **Permission mode toggle** (Shift+Tab) with inline approval
+    dialog
+  - **Slash commands** with dynamic tab completion and `@` file
+    path completion
+  - **Cursor-positioned input** with Ctrl+A/E/W/U editing, mouse
+    wheel scroll
+  - **Thinking block display** (Alt+T toggle)
+  - **Markdown rendering** (code blocks, headers, lists,
+    bold/italic/code)
+  - **Transcript mode** (Ctrl+O cycling normal/transcript/focus)
+  - **Portrait overlay** with hotkeys (Ctrl+P position, Alt+P
+    on/off, Alt+S size cycle)
+  - **Input field expansion**, bracketed paste support
+
+  ## Mode flag
+
+  `--mode forestage|claude` selects runtime:
+  - `forestage` (default): headless subprocess + custom ratatui TUI
+  - `claude`: inherited stdio passthrough to native Claude Code TUI
+
+  Configurable via CLI flag, config file, or `FORESTAGE_SESSION__MODE`
+  env var. The flag enables the bridge to be A/B tested against
+  the upstream UX (F1 two-audience problem).
+
+  ## Substrate (un-examined here)
+
+  - **NDJSON subprocess protocol** itself — inherited from marvel's
+    pattern; not deliberated by forestage as a contract choice
+  - **ratatui as TUI framework** — chosen without explicit probe
+    against alternatives (cursive, crossterm, tview)
+  - **Threading model** (Arc<Mutex<SessionMetrics>>) —
+    implementation-chosen
+edges:
+  - target: decision-language-rust
+    type: derives
+evidence:
+  - "8 phases, 21 commits, ~7000 lines, 94 tests"
+  - "PR #24 merged to develop"
+  - "finding-010-tui-prototype (partial — architecture validated, performance not yet profiled)"
+provenance:
+  created_by: human
+  extracted_session: session-049
+  extracted_at: "2026-05-13"
+  extracted_from: forestage/charter.md B4 prose (60 lines)
+  cross_ref: orchestrator F14
