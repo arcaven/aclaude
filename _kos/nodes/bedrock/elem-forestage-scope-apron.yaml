@@ -1,0 +1,26 @@
+id: elem-forestage-scope-apron
+type: element
+confidence: bedrock
+title: "forestage scope: exclusively a Claude Code REPL wrapper; apron is the planned 2.0 successor"
+content: |
+  Deliberated 2026-07-02 (atelier review; ratification-gate discipline).
+  forestage is exclusively a REPL wrapper for Claude Code and is not
+  likely to be more than that. Multi-harness support (crush, opencode,
+  custom harnesses) is NOT forestage scope — it lives at the MARVEL
+  layer: marvel runs any number of forestage, claude code, or other
+  REPLs across or within teams, via its runtime-adapter registry.
+
+  A future REPL called APRON is the planned forestage 2.0: it abandons
+  the wrapper approach and becomes a first-class agent-first REPL with
+  deeper marvel integration. Apron is named but not chartered; when it
+  is, it gets its own repo/graph. Until then, forestage feature work
+  should respect the wrapper boundary (see also the obsolescence
+  review's TUI-parity caution: don't chase the wrapped harness's own
+  roadmap).
+edges:
+  - target: elem-agent-taxonomy-cli-flags
+    type: derives
+provenance:
+  created_by: human
+  session: session-052
+  created_at: "2026-07-02"
