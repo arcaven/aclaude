@@ -1,0 +1,63 @@
+id: question-model-provider-selection
+type: question
+confidence: frontier
+title: "Can forestage select model AND provider (ollama, vLLM, Bedrock, Vertex, remote Anthropic-compatible) at launch, purely as a wrapper?"
+content: |
+  A `--model` flag exists and passes through to the claude subprocess.
+  No provider surface exists: the subprocess inherits the parent
+  environment untouched, and the --model arg is duplicated across four
+  spawn sites (bridge.rs:67, session.rs:61/120/246).
+
+  The feature: `forestage --provider <profile> --model <model>` where
+  profiles are named TOML entries ([providers.<name>]) resolved through
+  the B2 merge chain (defaults -> global -> local -> FORESTAGE_* env ->
+  CLI flags). A profile declares kind (anthropic-compatible | bedrock |
+  vertex), base_url, default_model, small_fast_model, and an auth
+  REFERENCE (none | inherit | env:VAR) — never a stored credential
+  (SOUL section 3, auth delegation).
+
+  Scope boundary (elem-forestage-scope-apron): forestage NEVER speaks
+  provider APIs natively. It configures the wrapped harness through
+  Claude Code's own supported mechanisms — ANTHROPIC_BASE_URL,
+  ANTHROPIC_AUTH_TOKEN/ANTHROPIC_API_KEY, CLAUDE_CODE_USE_BEDROCK,
+  CLAUDE_CODE_USE_VERTEX, ANTHROPIC_SMALL_FAST_MODEL, --model. Native
+  provider clients, request translation, or harness replacement are
+  apron (2.0) scope.
+
+  Open sub-questions:
+  a. Compatibility matrix — which local/remote providers can the claude
+     subprocess actually drive end-to-end (streaming, tool use,
+     permission flows)? Candidate paths: ollama Anthropic-compat
+     endpoint (existence/maturity unverified), vLLM direct, LiteLLM
+     proxy translation, Bedrock/Vertex env switches.
+  b. Auth interaction — what happens when ANTHROPIC_BASE_URL is set
+     while the user is OAuth-logged-in (Max subscription)? Which
+     env combinations conflict, and how does forestage surface the
+     failure instead of a confusing subprocess error?
+  c. Escape hatch — is an ad-hoc `--base-url` flag (no profile) worth
+     the surface area, or do profiles cover it?
+  d. Degradation signaling — local models may lack tool-use quality or
+     specific features; does forestage warn, or stay silent (wrapper
+     transparency vs operator experience)?
+  e. Marvel contract — does --provider join the B8 adapter flag
+     contract (per-agent provider assignment in team manifests)?
+  f. Statusline — provider indicator alongside the existing model
+     display; what identifies "where is this agent's brain" at a
+     glance in a multi-agent tmux layout?
+edges:
+  - target: elem-forestage-scope-apron
+    type: derives
+    note: "Scope boundary: wrapper-mode env/arg construction only; native providers are apron"
+  - target: elem-toml-config-merge-chain
+    type: derives
+    note: "Provider profiles resolve through the B2 merge chain"
+  - target: elem-marvel-adapter-contract
+    type: derives
+    note: "Sub-question e extends the B8 flag contract"
+  - target: question-two-audience
+    type: derives
+    note: "Per-agent provider assignment is a marvel/autonomous-audience concern too"
+provenance:
+  created_by: human
+  session: session-053
+  created_at: "2026-07-04"
