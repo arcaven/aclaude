@@ -501,3 +501,48 @@ jobs:
           git add Formula/forestage-a.rb
           git diff --cached --quiet || git commit -m "Update forestage-a to $TAG"
           git push
+
+  # ── Attestation ──────────────────────────────────────────────────────
+  attest:
+    name: Attest ${{ needs.config.outputs.release_title }} Provenance
+    needs: [config, build, sign-and-notarize, create-release]
+    # Run after create-release (or when sign-and-notarize is skipped
+    # because SIGNING_ENABLED != 'true') so attestations cover the FINAL
+    # bytes that ship — the post-notarization binaries, .pkg, .dmg — not
+    # the pre-sign build output. Applies to both alpha (develop) and
+    # stable-branch (main) pre-release channels; tag-driven stable
+    # releases are attested by release.yml.
+    if: |
+      !cancelled() &&
+      needs.build.result == 'success' &&
+      needs.create-release.result == 'success' &&
+      (needs.sign-and-notarize.result == 'success' || needs.sign-and-notarize.result == 'skipped')
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Download final release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p release-assets
+          # Pull everything currently attached to the release; create-release
+          # has already uploaded the final signed+notarized darwin artifacts
+          # alongside the Linux binaries by the time this runs.
+          gh release download "${{ needs.build.outputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --dir release-assets
+          echo "Assets to be attested:"
+          ls -la release-assets/
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: 'release-assets/*'

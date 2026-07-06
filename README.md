@@ -20,7 +20,39 @@ curl -fsSL https://raw.githubusercontent.com/arcavenae/forestage/main/install.sh
 brew install arcavenae/tap/forestage-a
 ```
 
-Stable channel (`forestage` / `arcavenae/tap/forestage`) will be available once a tagged release is cut. Until then, use the alpha channel — it tracks main and is signed and notarized.
+### Install with mise
+
+[mise](https://mise.jdx.dev/) is a polyglot version manager. It reads a per-project `mise.toml`, pulls the exact signed binary from GitHub Releases, and verifies GitHub Artifact Attestations natively — no Homebrew tap required.
+
+**Stable:**
+
+```bash
+mise use github:ArcavenAE/forestage@latest
+forestage --version
+```
+
+The first stable `v*` release is pending; until it ships, this command reports "no versions found for github:ArcavenAE/forestage". Use the alpha channel below in the meantime.
+
+**Alpha channel** (prereleases from `develop`) — add `prerelease = true` to opt in per-tool. Alpha binaries install as `forestage-a`, mirroring the Homebrew formula, so stable and alpha can coexist:
+
+```toml
+# mise.toml
+[tools]
+"github:ArcavenAE/forestage" = { version = "latest", prerelease = true }
+```
+
+```bash
+mise install
+forestage-a --version
+```
+
+**macOS troubleshooting** — mise downloads over HTTP libraries that do not set `com.apple.quarantine`, so notarized binaries launch without a Gatekeeper prompt in the common case. If a quarantine-aware host (some IDEs, launchers, or file-manager copies) propagates the xattr into the mise install, clear it once:
+
+```bash
+xattr -d com.apple.quarantine "$(mise which forestage-a)"
+```
+
+Stable channel (`forestage` / `arcavenae/tap/forestage`) will be available once a tagged release is cut. Until then, use the alpha channel — it tracks `develop` and is signed and notarized.
 
 ### Uninstall
 
