@@ -518,7 +518,7 @@ jobs:
       needs.create-release.result == 'success' &&
       (needs.sign-and-notarize.result == 'success' || needs.sign-and-notarize.result == 'skipped')
     permissions:
-      contents: read
+      contents: write
       id-token: write
       attestations: write
     runs-on: ubuntu-latest
@@ -543,6 +543,18 @@ jobs:
           ls -la release-assets/
 
       - name: Attest release artifacts
+        id: attest
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: 'release-assets/*'
+
+      - name: Upload attestation bundle to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Publish the Sigstore bundle as a release asset so external
+          # scanners (e.g. OSSF Scorecard Signed-Releases) can see it; the
+          # GitHub attestation store is not visible to them.
+          cp "${{ steps.attest.outputs.bundle-path }}" attestations.sigstore.json
+          gh release upload "${{ needs.build.outputs.tag }}" attestations.sigstore.json \
+            --repo "${{ github.repository }}" --clobber
